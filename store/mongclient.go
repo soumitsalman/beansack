@@ -9,30 +9,19 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	datautils "github.com/soumitsalman/data-utils"
-
-	"github.com/tmc/langchaingo/embeddings"
-	"github.com/tmc/langchaingo/textsplitter"
-)
-
-const (
-	_EMBEDDINGS = "embeddings"
-	_ID         = "_id"
 )
 
 type JSON map[string]any
 
-type Store struct {
+type Store[T any] struct {
 	name       string
 	collection *mongo.Collection
-	id_func    func(item any) string
-	embedder   embeddings.Embedder
-	splitter   textsplitter.TextSplitter
 }
 
-type Option func(store *Store)
+type Option[T any] func(store *Store[T])
 
-func New(opts ...Option) *Store {
-	store := &Store{}
+func New[T any](opts ...Option[T]) *Store[T] {
+	store := &Store[T]{}
 	for _, opt := range opts {
 		opt(store)
 	}
@@ -42,8 +31,8 @@ func New(opts ...Option) *Store {
 	return store
 }
 
-func WithConnectionString(connection_string, database, collection string) Option {
-	return func(store *Store) {
+func WithConnectionString[T any](connection_string, database, collection string) Option[T] {
+	return func(store *Store[T]) {
 		client := createMongoClient(connection_string)
 		if client == nil {
 			return
@@ -61,40 +50,39 @@ func WithConnectionString(connection_string, database, collection string) Option
 	}
 }
 
-func WithIdFunction(id_func func(item any) string) Option {
-	return func(store *Store) {
-		store.id_func = id_func
-	}
-}
-
-func WithEmbedder(embedder embeddings.Embedder) Option {
-	return func(store *Store) {
-		store.embedder = embedder
-	}
-}
-
-func WithTextSplitter(text_splitter textsplitter.TextSplitter) Option {
-	return func(store *Store) {
-		store.splitter = text_splitter
-	}
-}
-
-func AddDocuments[T any](store *Store, docs []T) ([]string, error) {
+func (store *Store[T]) AddDocuments(docs []T) ([]any, error) {
 	// this is done for error handling for mongo db
 	if len(docs) == 0 {
 		log.Printf("[%s]: Empty list of docs, nothing to insert.\n", store.name)
 		return nil, nil
 	}
+
 	res, err := store.collection.InsertMany(ctx.Background(), datautils.Transform(docs, func(item *T) any { return *item }))
 	if err != nil {
 		log.Printf("[%s]: Insertion failed. %v\n", store.name, err)
 		return nil, err
 	}
 	log.Printf("[%s]: %d items inserted.\n", store.name, len(res.InsertedIDs))
-	return datautils.Transform[any, string](res.InsertedIDs, func(id *any) string { return (*id).(string) }), nil
+	return res.InsertedIDs, nil
 }
 
-func GetDocuments[T any](store *Store, filter JSON) []T {
+func (store *Store[T]) UpdateDocuments(docs []T, filters []JSON) {
+	// create batch
+	updates := make([]mongo.WriteModel, len(docs))
+	for i := range docs {
+		updates[i] = mongo.NewUpdateOneModel().
+			SetFilter(filters[i]).
+			SetUpdate(JSON{"$set": docs[i]})
+	}
+	res, err := store.collection.BulkWrite(ctx.Background(), updates)
+	if err != nil {
+		log.Printf("[%s]: Update failed. %v\v", store.name, err)
+		return
+	}
+	log.Printf("[%s]: %d items updated.\n", store.name, res.UpsertedCount)
+}
+
+func (store *Store[T]) GetDocuments(filter JSON) []T {
 	background := ctx.Background()
 	cursor, err := store.collection.Find(background, filter)
 	if err != nil {

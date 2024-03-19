@@ -4,12 +4,14 @@ go 1.22.1
 
 require (
 	github.com/soumitsalman/data-utils v0.0.0-20240215161848-715d3435d104
-	github.com/tmc/langchaingo v0.1.5
 	go.mongodb.org/mongo-driver v1.14.0
 )
 
+require golang.org/x/net v0.22.0 // indirect
+
 require (
 	github.com/dlclark/regexp2 v1.8.1 // indirect
+	github.com/go-resty/resty/v2 v2.12.0
 	github.com/golang/snappy v0.0.1 // indirect
 	github.com/google/uuid v1.4.0 // indirect
 	github.com/klauspost/compress v1.17.2 // indirect
@@ -26,7 +28,7 @@ require (
 	gitlab.com/golang-commonmark/markdown v0.0.0-20211110145824-bf3e522c626a // indirect
 	gitlab.com/golang-commonmark/mdurl v0.0.0-20191124015652-932350d1cb84 // indirect
 	gitlab.com/golang-commonmark/puny v0.0.0-20191124015043-9f83538fa04f // indirect
-	golang.org/x/crypto v0.17.0 // indirect
+	golang.org/x/crypto v0.21.0 // indirect
 	golang.org/x/sync v0.5.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 )

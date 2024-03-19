@@ -1,17 +1,11 @@
 package sdk
 
 import (
-	ctx "context"
-	"log"
 	"os"
+	"time"
 
 	"github.com/soumitsalman/beansack/store"
 	datautils "github.com/soumitsalman/data-utils"
-
-	"github.com/tmc/langchaingo/embeddings"
-	hfe "github.com/tmc/langchaingo/embeddings/huggingface"
-	hfllm "github.com/tmc/langchaingo/llms/huggingface"
-	"github.com/tmc/langchaingo/textsplitter"
 )
 
 const (
@@ -20,89 +14,48 @@ const (
 	DIGESTS  = "digests"
 )
 
-const (
-	_MAX_CHUNK_SIZE   = 512
-	_EMBEDDINGS_MODEL = "sentence-transformers/all-mpnet-base-v2"
-)
-
-func newEmbedder() embeddings.Embedder {
-	hfclient, err := hfllm.New(
-		hfllm.WithToken(getHuggingfaceToken()),
-		hfllm.WithModel("gpt2"),
-	)
-	if err != nil {
-		log.Fatalln("Failed loading embedder", err)
-	}
-	embedder, err := hfe.NewHuggingface(
-		hfe.WithClient(*hfclient),
-		hfe.WithModel(_EMBEDDINGS_MODEL),
-	)
-	if err != nil {
-		log.Fatalln("Failed loading embedder", err)
-	}
-	return embedder
-}
-
-func newTextSplitter() textsplitter.TextSplitter {
-	return textsplitter.NewRecursiveCharacter(textsplitter.WithChunkSize(_MAX_CHUNK_SIZE))
-}
-
 var (
-	beanstore *store.Store = store.New(
-		store.WithConnectionString(getConnectionString(), BEANSACK, BEANS),
-	)
-	digeststore *store.Store = store.New(
-		store.WithConnectionString(getConnectionString(), BEANSACK, DIGESTS),
-		store.WithTextSplitter(newTextSplitter()),
-		store.WithEmbedder(newEmbedder()),
-	)
+	beanstore      *store.Store[Bean]           = store.New(store.WithConnectionString[Bean](getConnectionString(), BEANSACK, BEANS))
+	embeddingstore *store.Store[BeanEmbeddings] = store.New(store.WithConnectionString[BeanEmbeddings](getConnectionString(), BEANSACK, DIGESTS))
 )
 
-func AddBeans(beans []Bean) []string {
-	// set the ids
-	beans = datautils.ForEach(beans, func(item *Bean) {
-		item.Id = item.GetId()
+func AddBeans(beans []Bean) error {
+	// assign updated time
+	updated_time := time.Now().Unix()
+	datautils.ForEach(beans, func(item *Bean) {
+		item.Updated = updated_time
 	})
-	res, err := store.AddDocuments(beanstore, beans)
+
+	_, err := beanstore.AddDocuments(beans)
 	if err != nil {
-		return nil
+		return err
 	}
-	return res
+	// once the main docs are up, update them with sentiment, summary, keywords and embeddings
+	updateNlpAttributes(beans)
+	return nil
 }
 
-func AddDigest(beans []Bean) []string {
-	digest_packs := make([]BeanChunk, 0, len(beans))
+func updateNlpAttributes(beans []Bean) {
+	embs := CreateBeanEmbeddings(beans)
+	embeddingstore.AddDocuments(embs)
 
-	text_splitter := newTextSplitter()
-	embedder := newEmbedder()
-	datautils.ForEach(beans, func(bean *Bean) {
-		chunks, _ := text_splitter.SplitText(bean.Text)
-		log.Println(len(chunks), " chunks for", bean.GetId())
-		embeddings, err := embedder.EmbedDocuments(ctx.Background(), chunks)
-		if err != nil {
-			log.Println("Embeeding failed", err)
-		} else {
-			for i := range chunks {
-				digest_packs = append(digest_packs, BeanChunk{BeanId: bean.GetId(), Digest: chunks[i], Embeddings: embeddings[i]})
-			}
+	attrs := CreateAttributes(beans)
+	beanstore.UpdateDocuments(attrs, createPointerFilters(beans))
+}
+
+func createPointerFilters(beans []Bean) []store.JSON {
+	return datautils.Transform[Bean, store.JSON](beans, func(bean *Bean) store.JSON {
+		return store.JSON{
+			"url":     bean.Url,
+			"updated": bean.Updated,
 		}
 	})
-
-	res, err := store.AddDocuments(digeststore, digest_packs)
-	if err != nil {
-		return nil
-	}
-	return res
 }
 
 func GetBeans(filter store.JSON) []Bean {
-	return store.GetDocuments[Bean](beanstore, filter)
+	return beanstore.GetDocuments(filter)
 }
 
 func getConnectionString() string {
 	return os.Getenv("DB_CONNECTION_STRING")
-}
-
-func getHuggingfaceToken() string {
-	return os.Getenv("HUGGINGFACEHUB_API_TOKEN")
 }
