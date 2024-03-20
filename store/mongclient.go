@@ -91,14 +91,18 @@ func (store *Store[T]) Get(filter JSON) []T {
 
 // query documents
 func (store *Store[T]) SimilaritySearch(query_embeddings []float32, filter JSON, top_n int) []T {
+	cosmos_search := bson.M{
+		"vector": query_embeddings,
+		"path":   "embeddings", // this hardcoded for ease. All embeddings will be in a field called embeddings
+		"k":      top_n,
+	}
+	if len(filter) > 0 {
+		cosmos_search["filter"] = filter
+	}
 	search_pipeline := mongo.Pipeline{
 		{{
 			"$search", bson.M{
-				"cosmosSearch": bson.M{
-					"vector": query_embeddings,
-					"path":   "embeddings", // this hardcoded for ease. All embeddings will be in a field called embeddings
-					"k":      top_n,
-				},
+				"cosmosSearch":       cosmos_search,
 				"returnStoredSource": true,
 			},
 		}},

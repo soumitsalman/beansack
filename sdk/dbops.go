@@ -39,9 +39,9 @@ func GetBeans(filter store.JSON) []Bean {
 	return beanstore.Get(filter)
 }
 
-func SimilaritySearch(query_text string) []BeanEmbeddings {
+func SimilaritySearch(query_text string, filter store.JSON, top_n int) []BeanEmbeddings {
 	embeddings := CreateTextEmbeddings([]string{query_text})[0].Embeddings
-	return embeddingstore.SimilaritySearch(embeddings, store.JSON{"kind": ARTICLE}, 10)
+	return embeddingstore.SimilaritySearch(embeddings, filter, top_n)
 }
 
 func updateNlpAttributes(beans []Bean) {

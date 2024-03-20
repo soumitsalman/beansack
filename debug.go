@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/soumitsalman/beansack/sdk"
+	"github.com/soumitsalman/beansack/store"
 )
 
 func loadFromFile(filepath string) []sdk.Bean {
@@ -21,9 +23,16 @@ func main() {
 	// sdk.AddBeans(beans)
 
 	// fmt.Println(len(sdk.GetBeans(store.JSON{"kind": sdk.ARTICLE})))
-	res := sdk.SimilaritySearch("cyber attack")
+	// filter for retrieving items for the last 2 days
+	recent_filter := store.JSON{
+		"updated": store.JSON{
+			"$gte": time.Now().AddDate(0, 0, -2).Unix(),
+		},
+	}
+
+	res := sdk.SimilaritySearch("cyber attack", recent_filter, 20)
 	fmt.Println(len(res))
 	for _, v := range res {
-		fmt.Println(len(v.Text))
+		fmt.Println(v.BeanUrl)
 	}
 }
