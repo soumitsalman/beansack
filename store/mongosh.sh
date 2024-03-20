@@ -10,6 +10,29 @@ db.digests.countDocuments({})
 # vector index
 db.runCommand(
   {
+    "createIndexes": "beans",
+    "indexes": [
+      {
+        "name": "wholebeans_vec_search",
+        "key": 
+        {
+          "embeddings": "cosmosSearch"
+        },
+        "cosmosSearchOptions": 
+        {
+          "kind": "vector-ivf",
+          "numLists": 10,
+          "similarity": "COS",
+          "dimensions": 512
+        }
+      }
+    ]
+  }
+)
+
+
+db.runCommand(
+  {
     "createIndexes": "digests",
     "indexes": [
       {
