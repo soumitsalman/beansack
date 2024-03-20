@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
@@ -50,7 +51,7 @@ func WithConnectionString[T any](connection_string, database, collection string)
 	}
 }
 
-func (store *Store[T]) AddDocuments(docs []T) ([]any, error) {
+func (store *Store[T]) Add(docs []T) ([]any, error) {
 	// this is done for error handling for mongo db
 	if len(docs) == 0 {
 		log.Printf("[%s]: Empty list of docs, nothing to insert.\n", store.name)
@@ -66,7 +67,7 @@ func (store *Store[T]) AddDocuments(docs []T) ([]any, error) {
 	return res.InsertedIDs, nil
 }
 
-func (store *Store[T]) UpdateDocuments(docs []T, filters []JSON) {
+func (store *Store[T]) Update(docs []T, filters []JSON) {
 	// create batch
 	updates := make([]mongo.WriteModel, len(docs))
 	for i := range docs {
@@ -82,9 +83,38 @@ func (store *Store[T]) UpdateDocuments(docs []T, filters []JSON) {
 	log.Printf("[%s]: %d items updated.\n", store.name, res.UpsertedCount)
 }
 
-func (store *Store[T]) GetDocuments(filter JSON) []T {
+func (store *Store[T]) Get(filter JSON) []T {
 	background := ctx.Background()
-	cursor, err := store.collection.Find(background, filter)
+	return store.extractFromSearchResult(store.collection.Find(background, filter))
+
+}
+
+// query documents
+func (store *Store[T]) SimilaritySearch(query_embeddings []float32, filter JSON, top_n int) []T {
+	search_pipeline := mongo.Pipeline{
+		{{
+			"$search", bson.M{
+				"cosmosSearch": bson.M{
+					"vector": query_embeddings,
+					"path":   "embeddings", // this hardcoded for ease. All embeddings will be in a field called embeddings
+					"k":      top_n,
+				},
+				"returnStoredSource": true,
+			},
+		}},
+		{{
+			"$project", bson.M{
+				"url":     1,
+				"updated": 1,
+				"text":    1,
+			},
+		}},
+	}
+	return store.extractFromSearchResult(store.collection.Aggregate(ctx.Background(), search_pipeline))
+}
+
+func (store *Store[T]) extractFromSearchResult(cursor *mongo.Cursor, err error) []T {
+	background := ctx.Background()
 	if err != nil {
 		log.Printf("[%s]: Couldn't retrieve items. %v\n", store.name, err)
 		return nil
@@ -96,6 +126,33 @@ func (store *Store[T]) GetDocuments(filter JSON) []T {
 	}
 	return nil
 }
+
+// func createMediaContentTags(media_content_embeddings []float32) []string {
+// 	search_comm := mongo.Pipeline{
+// 		{{
+// 			"$search", JSON{
+// 				"cosmosSearch": JSON{
+// 					"vector": query_embeddings,
+// 					"path":   "embeddings", // this hardcoded for ease. All embeddings will be in a field called embeddings
+// 					"k":      top_n,
+// 				}, // return the top item
+// 			},
+// 		}},
+// 		{{
+// 			"$project", bson.M{
+// 				"_id": 1, //"$$ROOT._id"},
+// 			},
+// 		}},
+// 	}
+// 	if cursor, err := getMongoCollection(INTEREST_CATEGORIES).Aggregate(ctx.Background(), search_comm); err != nil {
+// 		return nil
+// 	} else {
+// 		defer cursor.Close(ctx.Background())
+// 		var items []CategoryItem
+// 		cursor.All(ctx.Background(), &items)
+// 		return utils.Transform[CategoryItem, string](items, func(item *CategoryItem) string { return item.Category })
+// 	}
+// }
 
 func createMongoClient(connection_string string) *mongo.Client {
 	client, err := mongo.Connect(ctx.Background(), options.Client().ApplyURI(connection_string))

@@ -8,18 +8,31 @@ db.medianoise.countDocuments({})
 db.digests.countDocuments({})
 
 # vector index
-db.digests.createIndex(
-{
-  name: 'digest_search',
-  key: 
+db.runCommand(
   {
-    "embeddings": "cosmosSearch"
-  },
-  cosmosSearchOptions: 
-  {
-    kind: 'vector-ivf',
-    numLists: 1,
-    similarity: 'COS',
-    dimensions: 384
+    "createIndexes": "digests",
+    "indexes": [
+      {
+        "name": "bean_vec_search",
+        "key": 
+        {
+          "embeddings": "cosmosSearch"
+        },
+        "cosmosSearchOptions": 
+        {
+          "kind": "vector-ivf",
+          "numLists": 1,
+          "similarity": "COS",
+          "dimensions": 384
+        }
+      }
+    ]
   }
-})
+)
+
+# scalar index
+db.beans.createIndex({url:1, updated:1})
+db.beans.createIndex({kind:1})
+db.digests.createIndex({url:1, updated:1})
+
+# https://learn.microsoft.com/en-us/azure/cosmos-db/mongodb/vcore/vector-search

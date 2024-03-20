@@ -26,7 +26,7 @@ func AddBeans(beans []Bean) error {
 		item.Updated = updated_time
 	})
 
-	_, err := beanstore.AddDocuments(beans)
+	_, err := beanstore.Add(beans)
 	if err != nil {
 		return err
 	}
@@ -35,12 +35,21 @@ func AddBeans(beans []Bean) error {
 	return nil
 }
 
+func GetBeans(filter store.JSON) []Bean {
+	return beanstore.Get(filter)
+}
+
+func SimilaritySearch(query_text string) []BeanEmbeddings {
+	embeddings := CreateTextEmbeddings([]string{query_text})[0].Embeddings
+	return embeddingstore.SimilaritySearch(embeddings, store.JSON{"kind": ARTICLE}, 10)
+}
+
 func updateNlpAttributes(beans []Bean) {
 	embs := CreateBeanEmbeddings(beans)
-	embeddingstore.AddDocuments(embs)
+	embeddingstore.Add(embs)
 
 	attrs := CreateAttributes(beans)
-	beanstore.UpdateDocuments(attrs, createPointerFilters(beans))
+	beanstore.Update(attrs, createPointerFilters(beans))
 }
 
 func createPointerFilters(beans []Bean) []store.JSON {
@@ -50,10 +59,6 @@ func createPointerFilters(beans []Bean) []store.JSON {
 			"updated": bean.Updated,
 		}
 	})
-}
-
-func GetBeans(filter store.JSON) []Bean {
-	return beanstore.GetDocuments(filter)
 }
 
 func getConnectionString() string {
