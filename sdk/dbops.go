@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/avast/retry-go"
@@ -21,7 +20,7 @@ const (
 const (
 	_MAX_TEXT_LENGTH    = 4096 * 4
 	_MIN_KEYWORD_LENGTH = 3
-	_NLP_OPS_BATCH_SIZE = 5
+	_NLP_OPS_BATCH_SIZE = 10
 )
 
 var (
@@ -31,6 +30,8 @@ var (
 )
 
 func AddBeans(beans []Bean) error {
+	// remove items without a text body
+
 	// assign updated time
 	updated_time := time.Now().Unix()
 	datautils.ForEach(beans, func(item *Bean) {
@@ -56,11 +57,29 @@ func SimilaritySearch(query_text string, filter store.JSON, top_n int) []Bean {
 	return wholebeans.SimilaritySearch(embeddings, filter, top_n)
 }
 
-func GetTopKeywords(last_n_days int) []KeywordMap {
-	top_keys_pipeline := []store.JSON{
+const (
+	_FOUR_WEEKS = 28
+	_ONE_DAY    = 1
+)
+
+func checkAndFixTimeWindow(time_window int) int {
+	switch {
+	case time_window > _FOUR_WEEKS:
+		return _FOUR_WEEKS
+	case time_window < _ONE_DAY:
+		return _ONE_DAY
+	default:
+		return time_window
+	}
+}
+
+// last_n_days can be between 1 - 30
+func GetTrendingKeywords(time_window int) []KeywordMap {
+	time_window = checkAndFixTimeWindow(time_window)
+	trending_keys_pipeline := []store.JSON{
 		{
 			"$match": store.JSON{
-				"updated": store.JSON{"$gte": timeValue(last_n_days)},
+				"updated": store.JSON{"$gte": timeValue(time_window)},
 			},
 		},
 		{
@@ -85,15 +104,17 @@ func GetTopKeywords(last_n_days int) []KeywordMap {
 			},
 		},
 	}
-	return keywordstore.Aggregate(top_keys_pipeline)
+	return keywordstore.Aggregate(trending_keys_pipeline)
 }
 
-func GetBeansWithTopKeywords(last_n_days int) []Bean {
+func GetTrendingBeans(time_window int) []Bean {
+	time_window = checkAndFixTimeWindow(time_window)
+
 	// first get the keywords with their counts
-	topkeywordmaps := GetTopKeywords(last_n_days)
+	trending_keywords := GetTrendingKeywords(time_window)
 
 	// then get the URLs with has those keywords
-	keywords := datautils.Transform(topkeywordmaps, func(item *KeywordMap) string { return item.Keyword })
+	keywords := datautils.Transform(trending_keywords, func(item *KeywordMap) string { return item.Keyword })
 	keyword_filter := store.JSON{
 		"keyword": store.JSON{"$in": keywords},
 	}
@@ -105,7 +126,7 @@ func GetBeansWithTopKeywords(last_n_days int) []Bean {
 	// time_val := timeValue(last_n_days)
 	latest_bean_filter := store.JSON{
 		"url":     store.JSON{"$in": urls},
-		"updated": store.JSON{"$gte": timeValue(last_n_days)},
+		"updated": store.JSON{"$gte": timeValue(time_window)},
 	}
 	fields := store.JSON{
 		"text":       0,
@@ -130,21 +151,20 @@ func updateNlpAttributes(beans []Bean) {
 	filters := getPointerFilters(beans)
 	texts := getTextFields(beans)
 
-	// TODO: enable this later after the embedder is fixed
-	// // embeddings
-	// embs := runRemoteNlpFunction(nlpdriver.CreateBeanEmbeddings, texts)
-	// wholebeans.Update(embs, filters)
+	// store embeddings
+	embs := runRemoteNlpFunction(nlpdriver.CreateBeanEmbeddings, texts)
+	wholebeans.Update(embs, filters)
 
-	// summary, keywords, sentiments
-	attrs := runRemoteNlpFunction(nlpdriver.CreateBeanAttributes, texts)
-	wholebeans.Update(attrs, filters)
+	// store summary
+	summaries := runRemoteNlpFunction(nlpdriver.CreateBeanSummary, texts)
+	wholebeans.Update(summaries, filters)
 
-	// store the keywords
+	// store the keywords in combination with existing keywords
+	keywords_list := runRemoteNlpFunction(nlpdriver.CreateBeanKeywords, texts)
 	for i := range beans {
-		keywords := datautils.Filter(append(beans[i].Keywords, attrs[i].Keywords...), func(item *string) bool { return len(strings.TrimSpace(*item)) > _MIN_KEYWORD_LENGTH })
-		keywordstore.Add(datautils.Transform(keywords, func(item *string) KeywordMap {
+		keywordstore.Add(datautils.Transform(append(beans[i].Keywords, keywords_list[i].Keywords...), func(item *string) KeywordMap {
 			return KeywordMap{
-				Keyword: strings.ToLower(*item),
+				Keyword: *item,
 				BeanUrl: beans[i].Url,
 				Updated: beans[i].Updated,
 			}

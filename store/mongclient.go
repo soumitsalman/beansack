@@ -57,6 +57,8 @@ func (store *Store[T]) Add(docs []T) ([]any, error) {
 		return nil, nil
 	}
 
+	// don't insert if it already exists when there is
+
 	res, err := store.collection.InsertMany(ctx.Background(), datautils.Transform(docs, func(item *T) any { return *item }))
 	if err != nil {
 		log.Printf("[%s]: Insertion failed. %v\n", store.name, err)
@@ -79,7 +81,7 @@ func (store *Store[T]) Update(docs []T, filters []JSON) {
 		log.Printf("[%s]: Update failed. %v\v", store.name, err)
 		return
 	}
-	log.Printf("[%s]: %d items updated.\n", store.name, res.UpsertedCount)
+	log.Printf("[%s]: %d items updated.\n", store.name, res.MatchedCount)
 }
 
 func (store *Store[T]) Get(filter JSON, fields JSON) []T {

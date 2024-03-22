@@ -10,6 +10,8 @@ import (
 const (
 	_EMBEDDINGS = "/text/embeddings"
 	_ATTRIBUTES = "/text/attributes"
+	_SUMMARY    = "/text/summary"
+	_KEYWORDS   = "/text/keywords"
 )
 
 type ParrotBoxDriver struct {
@@ -38,6 +40,14 @@ func (driver *ParrotBoxDriver) CreateTextAttributes(texts []string) ([]TextAttri
 
 func (driver *ParrotBoxDriver) CreateBeanAttributes(texts []string) ([]Bean, error) {
 	return postRequest[Bean](driver.url, _ATTRIBUTES, texts)
+}
+
+func (driver *ParrotBoxDriver) CreateBeanSummary(texts []string) ([]Bean, error) {
+	return postRequest[Bean](driver.url, _SUMMARY, texts)
+}
+
+func (driver *ParrotBoxDriver) CreateBeanKeywords(texts []string) ([]Bean, error) {
+	return postRequest[Bean](driver.url, _KEYWORDS, texts)
 }
 
 func postRequest[T any](url, endpoint string, body any) ([]T, error) {

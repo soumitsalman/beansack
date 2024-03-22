@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/soumitsalman/beansack/sdk"
+	"github.com/soumitsalman/beansack/store"
 	datautils "github.com/soumitsalman/data-utils"
 )
 
@@ -22,9 +23,9 @@ func loadFromFile(filepath string) []sdk.Bean {
 	return output
 }
 
-func main() {
-	// path := "news-dump/2024-03-21-12-58-35.json"
-	// beans := loadFromFile(path)
+func debug_main() {
+	path := "news-dump/2024-03-21-12-52-24.json"
+	beans := loadFromFile(path)
 	// texts := datautils.Transform(beans, func(bean *sdk.Bean) string { return bean.Text })
 	// js, _ := json.MarshalIndent(texts, "", " ")
 	// log.Println(string(js))
@@ -36,9 +37,9 @@ func main() {
 	// result := nlpdriver.CreateTextEmbeddings_v2(datautils.Transform(beans, func(bean *sdk.Bean) string { return bean.Text }))
 	// fmt.Println(len(result))
 
-	// sdk.AddBeans(beans)
+	sdk.AddBeans(beans)
 
-	// fmt.Println(len(sdk.GetBeans(store.JSON{"kind": sdk.ARTICLE})))
+	fmt.Println(len(sdk.GetBeans(store.JSON{"kind": sdk.ARTICLE}, nil)))
 
 	// filter for retrieving items for the last 2 days
 	// recent_filter := store.JSON{
@@ -53,12 +54,12 @@ func main() {
 	// 	fmt.Println(time.Unix(v.Updated, 0).Format(time.DateTime), v.Url)
 	// }
 
-	keywords := sdk.GetTopKeywords(2)
+	keywords := sdk.GetTrendingKeywords(2)
 	datautils.ForEach(keywords, func(item *sdk.KeywordMap) {
 		fmt.Println(item.Keyword, item.Count)
 	})
 
-	top_beans := sdk.GetBeansWithTopKeywords(2)
+	top_beans := sdk.GetTrendingBeans(2)
 	datautils.ForEach(top_beans, func(v *sdk.Bean) {
 		fmt.Println(time.Unix(v.Updated, 0).Format(time.DateTime), v.Title)
 	})
