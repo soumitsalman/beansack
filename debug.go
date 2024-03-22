@@ -3,23 +3,28 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
 	"github.com/soumitsalman/beansack/sdk"
-	"github.com/soumitsalman/beansack/store"
+	datautils "github.com/soumitsalman/data-utils"
 )
 
 func loadFromFile(filepath string) []sdk.Bean {
-	file, _ := os.Open(filepath)
+	file, err := os.Open(filepath)
+	if err != nil {
+		log.Fatalln(filepath, "not found")
+		return nil
+	}
 	var output []sdk.Bean
 	json.NewDecoder(file).Decode(&output)
 	return output
 }
 
 func main() {
-	path := "/home/soumitsr/Codes/newscollector/2024-03-18-14-55-11.json"
-	beans := loadFromFile(path)
+	// path := "news-dump/2024-03-21-12-58-35.json"
+	// beans := loadFromFile(path)
 	// texts := datautils.Transform(beans, func(bean *sdk.Bean) string { return bean.Text })
 	// js, _ := json.MarshalIndent(texts, "", " ")
 	// log.Println(string(js))
@@ -31,22 +36,32 @@ func main() {
 	// result := nlpdriver.CreateTextEmbeddings_v2(datautils.Transform(beans, func(bean *sdk.Bean) string { return bean.Text }))
 	// fmt.Println(len(result))
 
-	sdk.AddBeans(beans)
+	// sdk.AddBeans(beans)
 
-	fmt.Println(len(sdk.GetBeans(store.JSON{"kind": sdk.ARTICLE})))
+	// fmt.Println(len(sdk.GetBeans(store.JSON{"kind": sdk.ARTICLE})))
 
 	// filter for retrieving items for the last 2 days
-	recent_filter := store.JSON{
-		"updated": store.JSON{
-			"$gte": time.Now().AddDate(0, 0, -2).Unix(),
-		},
-	}
+	// recent_filter := store.JSON{
+	// 	"updated": store.JSON{
+	// 		"$gte": time.Now().AddDate(0, 0, -2).Unix(),
+	// 	},
+	// }
 
-	res := sdk.SimilaritySearch("data breach", recent_filter, 20, false)
-	fmt.Println(len(res))
-	for _, v := range res {
-		fmt.Println(v.Url)
-	}
+	// res := sdk.SimilaritySearch("data breach", recent_filter, 20)
+	// fmt.Println(len(res))
+	// for _, v := range res {
+	// 	fmt.Println(time.Unix(v.Updated, 0).Format(time.DateTime), v.Url)
+	// }
+
+	keywords := sdk.GetTopKeywords(2)
+	datautils.ForEach(keywords, func(item *sdk.KeywordMap) {
+		fmt.Println(item.Keyword, item.Count)
+	})
+
+	top_beans := sdk.GetBeansWithTopKeywords(2)
+	datautils.ForEach(top_beans, func(v *sdk.Bean) {
+		fmt.Println(time.Unix(v.Updated, 0).Format(time.DateTime), v.Title)
+	})
 
 	// nlpdriver := sdk.NewHuggingfaceDriver()
 	// // nlpdriver := sdk.NewParrotBoxDriver()

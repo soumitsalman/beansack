@@ -19,7 +19,7 @@ type Bean struct {
 	Author    string `json:"author,omitempty" bson:"author,omitempty"`       // author of posts or comments. Empty for subreddits
 	Published int64  `json:"published,omitempty" bson:"published,omitempty"` // date of creation of the post or comment. Empty for subreddits
 
-	Keywords   []string  `json:"keywords,omitempty" bson:"keywords,omitempty"`     // computed from a small language model
+	Keywords   []string  `json:"keywords,omitempty"`                               // DO NOT SERIALIZE IT TO MONGO. This can come from input and/or computed from a small language model
 	Summary    string    `json:"summary,omitempty" bson:"summary,omitempty"`       // computed from a small language model
 	Sentiment  string    `json:"sentiment,omitempty" bson:"sentiment,omitempty"`   // computed from a small language model
 	Embeddings []float32 `json:"embeddings,omitempty" bson:"embeddings,omitempty"` // computed from a small language model
@@ -41,12 +41,12 @@ type BeanMediaNoise struct {
 	Score         int     `json:"score,omitempty" bson:"score,omitempty"`
 }
 
-// type KeywordMap struct {
-// 	DBId    string `json:"_id,omitempty" bson:"_id,omitempty"` // id in the database
-// 	Updated int64  `json:"updated,omitempty" bson:"updated,omitempty"`
-// 	BeanUrl string `json:"url,omitempty" bson:"url,omitempty"`         // the id is 1:1 mapping with Bean.Id
-// 	Keyword string `json:"keyword,omitempty" bson:"keyword,omitempty"` // extracted from a small language model
-// }
+type KeywordMap struct {
+	Updated int64  `json:"updated,omitempty" bson:"updated,omitempty"`
+	BeanUrl string `json:"url,omitempty" bson:"url,omitempty"`         // the id is 1:1 mapping with Bean.Id
+	Keyword string `json:"keyword,omitempty" bson:"keyword,omitempty"` // extracted from a small language model
+	Count   int    `bson:"count,omitempty"`
+}
 
 func (a *Bean) Equals(b *Bean) bool {
 	return (a.Url == b.Url)
@@ -60,9 +60,9 @@ func (n *BeanMediaNoise) PointsTo(a *Bean) bool {
 	return n.BeanUrl == a.Url
 }
 
-// func (k *KeywordMap) PointsTo(a *Bean) bool {
-// 	return k.BeanUrl == a.Url
-// }
+func (k *KeywordMap) PointsTo(a *Bean) bool {
+	return k.BeanUrl == a.Url
+}
 
 // func normalizeUrl(url string) string {
 // 	return regexp.MustCompile("[^a-zA-Z0-9]+").ReplaceAllString(url, "-")

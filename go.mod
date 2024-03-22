@@ -12,6 +12,7 @@ require (
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/pkoukk/tiktoken-go v0.1.6 // indirect
 	gitlab.com/golang-commonmark/html v0.0.0-20191124015941-a22733972181 // indirect
 	gitlab.com/golang-commonmark/linkify v0.0.0-20191026162114-a0c2df6c8f82 // indirect

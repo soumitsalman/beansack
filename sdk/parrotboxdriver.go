@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	_EMBEDDINGS = "/embeddings"
-	_ATTRIBUTES = "/attributes"
+	_EMBEDDINGS = "/text/embeddings"
+	_ATTRIBUTES = "/text/attributes"
 )
 
 type ParrotBoxDriver struct {

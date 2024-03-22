@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
@@ -83,15 +82,20 @@ func (store *Store[T]) Update(docs []T, filters []JSON) {
 	log.Printf("[%s]: %d items updated.\n", store.name, res.UpsertedCount)
 }
 
-func (store *Store[T]) Get(filter JSON) []T {
-	background := ctx.Background()
-	return store.extractFromSearchResult(store.collection.Find(background, filter))
+func (store *Store[T]) Get(filter JSON, fields JSON) []T {
+	// db.orders.distinct("product_name", { status: "shipped" });
 
+	fields = datautils.AppendMaps(JSON{"_id": 0}, fields)
+	return store.extractFromSearchResult(store.collection.Find(ctx.Background(), filter, options.Find().SetProjection(fields)))
+}
+
+func (store *Store[T]) Aggregate(pipeline any) []T {
+	return store.extractFromSearchResult(store.collection.Aggregate(ctx.Background(), pipeline))
 }
 
 // query documents
 func (store *Store[T]) SimilaritySearch(query_embeddings []float32, filter JSON, top_n int) []T {
-	cosmos_search := bson.M{
+	cosmos_search := JSON{
 		"vector": query_embeddings,
 		"path":   "embeddings", // this hardcoded for ease. All embeddings will be in a field called embeddings
 		"k":      top_n,
@@ -99,22 +103,22 @@ func (store *Store[T]) SimilaritySearch(query_embeddings []float32, filter JSON,
 	if len(filter) > 0 {
 		cosmos_search["filter"] = filter
 	}
-	search_pipeline := mongo.Pipeline{
-		{{
-			"$search", bson.M{
+	search_pipeline := []JSON{
+		{
+			"$search": JSON{
 				"cosmosSearch":       cosmos_search,
 				"returnStoredSource": true,
 			},
-		}},
-		{{
-			"$project", bson.M{
+		},
+		{
+			"$project": JSON{
 				"url":     1,
 				"updated": 1,
 				"text":    1,
 			},
-		}},
+		},
 	}
-	return store.extractFromSearchResult(store.collection.Aggregate(ctx.Background(), search_pipeline))
+	return store.Aggregate(search_pipeline)
 }
 
 func (store *Store[T]) extractFromSearchResult(cursor *mongo.Cursor, err error) []T {
