@@ -11,17 +11,27 @@ import (
 	datautils "github.com/soumitsalman/data-utils"
 )
 
+const (
+	_DEFAULT_SEARCH_MIN_SCORE = 0.5
+	_DEFAULT_SEARCH_TOP_N     = 5
+)
+
 type JSON map[string]any
 
 type Store[T any] struct {
-	name       string
-	collection *mongo.Collection
+	name             string
+	collection       *mongo.Collection
+	search_min_score float64
+	search_top_n     int
 }
 
 type Option[T any] func(store *Store[T])
 
 func New[T any](opts ...Option[T]) *Store[T] {
-	store := &Store[T]{}
+	store := &Store[T]{
+		search_min_score: _DEFAULT_SEARCH_MIN_SCORE,
+		search_top_n:     _DEFAULT_SEARCH_TOP_N,
+	}
 	for _, opt := range opts {
 		opt(store)
 	}
@@ -47,6 +57,18 @@ func WithConnectionString[T any](connection_string, database, collection string)
 		}
 		store.name = fmt.Sprintf("%s/%s", database, collection)
 		store.collection = col_client
+	}
+}
+
+func WithMinSearchScore[T any](score float64) Option[T] {
+	return func(store *Store[T]) {
+		store.search_min_score = score
+	}
+}
+
+func WithSearchTopN[T any](top_n int) Option[T] {
+	return func(store *Store[T]) {
+		store.search_top_n = top_n
 	}
 }
 
@@ -85,7 +107,7 @@ func (store *Store[T]) Update(docs []T, filters []JSON) {
 }
 
 func (store *Store[T]) Get(filter JSON, fields JSON) []T {
-	fields = datautils.AppendMaps(JSON{"_id": 0}, fields)
+	// fields = datautils.AppendMaps(JSON{"_id": 0}, fields)
 	return store.extractFromSearchResult(store.collection.Find(ctx.Background(), filter, options.Find().SetProjection(fields)))
 }
 
@@ -94,15 +116,25 @@ func (store *Store[T]) Aggregate(pipeline any) []T {
 }
 
 // query documents
-func (store *Store[T]) SimilaritySearch(query_embeddings []float32, filter JSON, fields JSON, top_n int) []T {
+func (store *Store[T]) Search(query_embeddings []float32, filter JSON, fields JSON) []T {
 	cosmos_search := JSON{
 		"vector": query_embeddings,
 		"path":   "embeddings", // this hardcoded for ease. All embeddings will be in a field called embeddings
-		"k":      top_n,
+		"k":      store.search_top_n,
 	}
 	if len(filter) > 0 {
 		cosmos_search["filter"] = filter
 	}
+	// js, _ := json.MarshalIndent(cosmos_search, "", "  ")
+	// log.Println(string(js))
+
+	fields = datautils.AppendMaps(
+		JSON{
+			"similarity_score": JSON{"$meta": "searchScore"},
+			"_id":              0,
+		},
+		fields,
+	)
 	search_pipeline := []JSON{
 		{
 			"$search": JSON{
@@ -111,7 +143,12 @@ func (store *Store[T]) SimilaritySearch(query_embeddings []float32, filter JSON,
 			},
 		},
 		{
-			"$project": datautils.AppendMaps(JSON{"_id": 0}, fields),
+			"$project": fields,
+		},
+		{
+			"$match": JSON{
+				"similarity_score": JSON{"$gte": store.search_min_score},
+			},
 		},
 	}
 	return store.Aggregate(search_pipeline)
@@ -130,33 +167,6 @@ func (store *Store[T]) extractFromSearchResult(cursor *mongo.Cursor, err error) 
 	}
 	return nil
 }
-
-// func createMediaContentTags(media_content_embeddings []float32) []string {
-// 	search_comm := mongo.Pipeline{
-// 		{{
-// 			"$search", JSON{
-// 				"cosmosSearch": JSON{
-// 					"vector": query_embeddings,
-// 					"path":   "embeddings", // this hardcoded for ease. All embeddings will be in a field called embeddings
-// 					"k":      top_n,
-// 				}, // return the top item
-// 			},
-// 		}},
-// 		{{
-// 			"$project", bson.M{
-// 				"_id": 1, //"$$ROOT._id"},
-// 			},
-// 		}},
-// 	}
-// 	if cursor, err := getMongoCollection(INTEREST_CATEGORIES).Aggregate(ctx.Background(), search_comm); err != nil {
-// 		return nil
-// 	} else {
-// 		defer cursor.Close(ctx.Background())
-// 		var items []CategoryItem
-// 		cursor.All(ctx.Background(), &items)
-// 		return utils.Transform[CategoryItem, string](items, func(item *CategoryItem) string { return item.Category })
-// 	}
-// }
 
 func createMongoClient(connection_string string) *mongo.Client {
 	client, err := mongo.Connect(ctx.Background(), options.Client().ApplyURI(connection_string))

@@ -23,6 +23,8 @@ type Bean struct {
 	Summary    string    `json:"summary,omitempty" bson:"summary,omitempty"`       // computed from a small language model
 	Sentiment  string    `json:"sentiment,omitempty" bson:"sentiment,omitempty"`   // computed from a small language model
 	Embeddings []float32 `json:"embeddings,omitempty" bson:"embeddings,omitempty"` // computed from a small language model
+
+	SimilarityScore float64 `json:"similarity_score,omitempty" bson:"similarity_score,omitempty"` // this is used for internal search
 }
 
 type BeanMediaNoise struct {

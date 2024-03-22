@@ -30,17 +30,57 @@ const (
 )
 
 var (
-	wholebeans   *store.Store[Bean]       = store.New(store.WithConnectionString[Bean](getConnectionString(), BEANSACK, BEANS))
+	wholebeans *store.Store[Bean] = store.New(
+		store.WithConnectionString[Bean](getConnectionString(), BEANSACK, BEANS),
+		store.WithMinSearchScore[Bean](0.0), // TODO: change this to 0.8 in future
+		store.WithSearchTopN[Bean](15),
+	)
+	// wholebeans_V2 *store.Store[map[string]any] = store.New(store.WithConnectionString[map[string]any](getConnectionString(), BEANSACK, BEANS))
 	keywordstore *store.Store[KeywordMap] = store.New(store.WithConnectionString[KeywordMap](getConnectionString(), BEANSACK, KEYWORDS))
 	nlpdriver    *ParrotBoxDriver         = NewParrotBoxDriver()
 )
 
 var (
 	bean_fields = store.JSON{
-		"embeddings": 0,
-		"text":       0,
+		"url":       1,
+		"updated":   1,
+		"source":    1,
+		"title":     1,
+		"kind":      1,
+		"author":    1,
+		"published": 1,
+		"summary":   1,
+		"keywords":  1,
 	}
 )
+
+type Option func(filter store.JSON)
+
+func WithKeywordsFilter(keywords []string) Option {
+	return func(filter store.JSON) {
+		filter["keywords"] = store.JSON{"$in": keywords}
+	}
+}
+
+func WithTrendingFilter(time_window int) Option {
+	return func(filter store.JSON) {
+		keywords := datautils.Transform(GetTrendingKeywords(time_window), func(item *KeywordMap) string { return item.Keyword })
+		filter["keywords"] = store.JSON{"$in": keywords}
+		filter["updated"] = store.JSON{"$gte": timeValue(checkAndFixTimeWindow(time_window))}
+	}
+}
+
+func WithTimeWindowFilter(time_window int) Option {
+	return func(filter store.JSON) {
+		filter["updated"] = store.JSON{"$gte": timeValue(checkAndFixTimeWindow(time_window))}
+	}
+}
+
+func WithKindFilter(kind string) Option {
+	return func(filter store.JSON) {
+		filter["kind"] = kind
+	}
+}
 
 func AddBeans(beans []Bean) error {
 	// remove items without a text body
@@ -61,51 +101,23 @@ func AddBeans(beans []Bean) error {
 	return nil
 }
 
-func getBeans(filter store.JSON, fields store.JSON) []Bean {
-	return wholebeans.Get(filter, fields)
-}
-
-// Either assign query_texts or query_embeddings.
-// If query_embeddings is nil then embeddings will be created from query_text for search
-// If both are provded query_embeddings will take higher priority
-// top_n doesnt really mean much now
-func SimilaritySearch(query_texts []string, query_embeddings [][]float32, filter store.JSON, top_n int) []Bean {
+func SearchBeans(query_texts []string, query_embeddings [][]float32, filter_options ...Option) []Bean {
 	// if query embeddings is nil or empty then make it up from query_text
 	if len(query_embeddings) == 0 {
-		log.Println("[dbops] Generating embeddings for similarity search")
+		log.Println("[dbops] Generating embeddings for:", query_texts)
 		query_embeddings = datautils.Transform(runRemoteNlpFunction(nlpdriver.CreateTextEmbeddings, query_texts), func(item *TextEmbeddings) []float32 { return item.Embeddings })
 	}
+	filter := makeFilter(filter_options...)
 	beans := make([]Bean, 0, 3*len(query_embeddings)) // approximate length
 	for _, emb := range query_embeddings {
-		beans = append(beans, wholebeans.SimilaritySearch(emb, filter, bean_fields, top_n)...)
+		beans = append(beans, wholebeans.Search(emb, filter, bean_fields)...)
 	}
 
 	return beans
 }
 
-func BeanFilter(keywords []string, time_window int) store.JSON {
-	filter := store.JSON{
-		"updated": store.JSON{"$gte": timeValue(checkAndFixTimeWindow(time_window))},
-	}
-	if len(keywords) > 0 {
-		filter["keywords"] = store.JSON{"$in": keywords}
-	}
-	return filter
-}
-
-func GetBeans(keywords []string, time_window int) []Bean {
-	return getBeans(BeanFilter(keywords, time_window), bean_fields)
-}
-
-func GetTrendingBeans(time_window int) []Bean {
-	time_window = checkAndFixTimeWindow(time_window)
-
-	// first get the keywords with their counts
-	trending_keywords := GetTrendingKeywords(time_window)
-
-	// then get the URLs with has those keywords
-	keywords := datautils.Transform(trending_keywords, func(item *KeywordMap) string { return item.Keyword })
-	return GetBeans(keywords, time_window)
+func GetBeans(filter_options ...Option) []Bean {
+	return wholebeans.Get(makeFilter(filter_options...), bean_fields)
 }
 
 // last_n_days can be between 1 - 30
@@ -140,6 +152,14 @@ func GetTrendingKeywords(time_window int) []KeywordMap {
 		},
 	}
 	return keywordstore.Aggregate(trending_keys_pipeline)
+}
+
+func makeFilter(filter_options ...Option) store.JSON {
+	filter := store.JSON{}
+	for _, opt := range filter_options {
+		opt(filter)
+	}
+	return filter
 }
 
 func timeValue(time_window int) int64 {

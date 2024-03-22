@@ -13,8 +13,8 @@ import (
 // GET /trending/topics?window=1
 
 const (
-	_ERROR_MESSAGE   = "YO! do you even code?! Read this: https://github.com/soumitsalman/beansack"
-	_SUCCESS_MESSAGE = "I gotchu"
+	_ERROR_MESSAGE   = "YO! do you even code?! Read this: https://github.com/soumitsalman/beansack."
+	_SUCCESS_MESSAGE = "I gotchu."
 )
 
 const (
@@ -43,30 +43,43 @@ func newBeansHandler(ctx *gin.Context) {
 	}
 }
 
-func getTrendingBeansHandler(ctx *gin.Context) {
-	var query_params queryParams
-	if ctx.BindQuery(&query_params) != nil {
-		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
-	} else {
-		var beans []sdk.Bean
-		if len(query_params.Topics) > 0 {
-			beans = sdk.GetBeans(query_params.Topics, query_params.Window)
-		} else {
-			beans = sdk.GetTrendingBeans(query_params.Window)
-		}
-		ctx.JSON(http.StatusOK, beans)
-	}
+func getBeansHandler(ctx *gin.Context) {
+	queryBeansHandler(ctx, func(filters []sdk.Option) []sdk.Bean {
+		return sdk.GetBeans(filters...)
+	})
 }
 
 func searchBeansHandler(ctx *gin.Context) {
+	queryBeansHandler(ctx, func(filters []sdk.Option) []sdk.Bean {
+		var body_params bodyParams
+		if ctx.BindJSON(&body_params) != nil {
+			return nil
+		}
+		return sdk.SearchBeans(body_params.QueryTexts, body_params.QueryEmbeddings, filters...)
+	})
+}
+
+func queryBeansHandler(ctx *gin.Context, queryBeans func(filters []sdk.Option) []sdk.Bean) {
 	var query_params queryParams
-	var body_params bodyParams
-	if ctx.BindQuery(&query_params) != nil || ctx.BindJSON(&body_params) != nil {
-		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
+	if ctx.BindQuery(&query_params) != nil {
+		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE+" query params are fucked up")
+		return
+	}
+	// create filters
+	filters := make([]sdk.Option, 0, 3)
+	// Assign a time window whether it is specified or not. If it is not specified it will become 1 day
+	filters = append(filters, sdk.WithTimeWindowFilter(query_params.Window))
+	if query_params.Trending {
+		filters = append(filters, sdk.WithTrendingFilter(query_params.Window))
+	}
+	if len(query_params.Topics) > 0 {
+		filters = append(filters, sdk.WithKeywordsFilter(query_params.Topics))
+	}
+
+	if res := queryBeans(filters); res != nil {
+		ctx.JSON(http.StatusOK, res)
 	} else {
-		var beans []sdk.Bean
-		beans = sdk.SimilaritySearch(body_params.QueryTexts, body_params.QueryEmbeddings, sdk.BeanFilter(query_params.Topics, query_params.Window), 10)
-		ctx.JSON(http.StatusOK, beans)
+		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE+" The body may be fucked up")
 	}
 }
 
@@ -98,7 +111,7 @@ func newServer() *gin.Engine {
 	// TODO: put this under auth
 	group.PUT("/beans", newBeansHandler)
 	// GET /beans/trending?topic=keyword&window=1
-	group.GET("/beans/trending", getTrendingBeansHandler)
+	group.GET("/beans/trending", getBeansHandler)
 	// GET /beans/search?window=1
 	group.GET("/beans/search", searchBeansHandler)
 	// GET /topics/trending?window=1
@@ -108,4 +121,5 @@ func newServer() *gin.Engine {
 
 func main() {
 	newServer().Run()
+	// debug_main()
 }
