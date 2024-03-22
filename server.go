@@ -23,8 +23,8 @@ const (
 )
 
 type getQueryParams struct {
-	Window int    `form:"window"`
-	Topics string `form:"topics"`
+	Window int      `form:"window"`
+	Topics []string `form:"topic"`
 }
 
 type getBodyParams struct {
@@ -48,7 +48,14 @@ func getTrendingBeansHandler(ctx *gin.Context) {
 	if ctx.BindQuery(&query_params) != nil {
 		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
 	} else {
-		ctx.JSON(http.StatusOK, sdk.GetTrendingBeans(query_params.Window))
+		// topics := strings.Split(query_params.Topics, ",")
+		var beans []sdk.Bean
+		if len(query_params.Topics) > 0 {
+			beans = sdk.GetBeans(query_params.Topics, query_params.Window)
+		} else {
+			beans = sdk.GetTrendingBeans(query_params.Window)
+		}
+		ctx.JSON(http.StatusOK, beans)
 	}
 }
 

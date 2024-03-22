@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/soumitsalman/beansack/sdk"
-	"github.com/soumitsalman/beansack/store"
 	datautils "github.com/soumitsalman/data-utils"
 )
 
@@ -39,7 +38,7 @@ func debug_main() {
 
 	sdk.AddBeans(beans)
 
-	fmt.Println(len(sdk.GetBeans(store.JSON{"kind": sdk.ARTICLE}, nil)))
+	// fmt.Println(len(sdk.GetBeans(store.JSON{"kind": sdk.ARTICLE}, nil)))
 
 	// filter for retrieving items for the last 2 days
 	// recent_filter := store.JSON{

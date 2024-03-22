@@ -19,7 +19,7 @@ type Bean struct {
 	Author    string `json:"author,omitempty" bson:"author,omitempty"`       // author of posts or comments. Empty for subreddits
 	Published int64  `json:"published,omitempty" bson:"published,omitempty"` // date of creation of the post or comment. Empty for subreddits
 
-	Keywords   []string  `json:"keywords,omitempty"`                               // DO NOT SERIALIZE IT TO MONGO. This can come from input and/or computed from a small language model
+	Keywords   []string  `json:"keywords,omitempty" bson:"keywords,omitempty"`     // This can come from input and/or computed from a small language model
 	Summary    string    `json:"summary,omitempty" bson:"summary,omitempty"`       // computed from a small language model
 	Sentiment  string    `json:"sentiment,omitempty" bson:"sentiment,omitempty"`   // computed from a small language model
 	Embeddings []float32 `json:"embeddings,omitempty" bson:"embeddings,omitempty"` // computed from a small language model
