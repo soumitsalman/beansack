@@ -35,6 +35,13 @@ var (
 	nlpdriver    *ParrotBoxDriver         = NewParrotBoxDriver()
 )
 
+var (
+	bean_fields = store.JSON{
+		"embeddings": 0,
+		"text":       0,
+	}
+)
+
 func AddBeans(beans []Bean) error {
 	// remove items without a text body
 
@@ -58,25 +65,47 @@ func getBeans(filter store.JSON, fields store.JSON) []Bean {
 	return wholebeans.Get(filter, fields)
 }
 
-func SimilaritySearch(query_text string, filter store.JSON, top_n int) []Bean {
-	embeddings := runRemoteNlpFunction(nlpdriver.CreateTextEmbeddings, []string{query_text})[0].Embeddings
-	return wholebeans.SimilaritySearch(embeddings, filter, top_n)
+// Either assign query_texts or query_embeddings.
+// If query_embeddings is nil then embeddings will be created from query_text for search
+// If both are provded query_embeddings will take higher priority
+// top_n doesnt really mean much now
+func SimilaritySearch(query_texts []string, query_embeddings [][]float32, filter store.JSON, top_n int) []Bean {
+	// if query embeddings is nil or empty then make it up from query_text
+	if len(query_embeddings) == 0 {
+		log.Println("[dbops] Generating embeddings for similarity search")
+		query_embeddings = datautils.Transform(runRemoteNlpFunction(nlpdriver.CreateTextEmbeddings, query_texts), func(item *TextEmbeddings) []float32 { return item.Embeddings })
+	}
+	beans := make([]Bean, 0, 3*len(query_embeddings)) // approximate length
+	for _, emb := range query_embeddings {
+		beans = append(beans, wholebeans.SimilaritySearch(emb, filter, bean_fields, top_n)...)
+	}
+
+	return beans
 }
 
-func GetBeans(keywords []string, time_window int) []Bean {
+func BeanFilter(keywords []string, time_window int) store.JSON {
 	filter := store.JSON{
-		"updated": store.JSON{"$gte": timeValue(time_window)},
+		"updated": store.JSON{"$gte": timeValue(checkAndFixTimeWindow(time_window))},
 	}
 	if len(keywords) > 0 {
 		filter["keywords"] = store.JSON{"$in": keywords}
 	}
-	return getBeans(
-		filter,
-		store.JSON{
-			"embeddings": 0,
-			"text":       0,
-		},
-	)
+	return filter
+}
+
+func GetBeans(keywords []string, time_window int) []Bean {
+	return getBeans(BeanFilter(keywords, time_window), bean_fields)
+}
+
+func GetTrendingBeans(time_window int) []Bean {
+	time_window = checkAndFixTimeWindow(time_window)
+
+	// first get the keywords with their counts
+	trending_keywords := GetTrendingKeywords(time_window)
+
+	// then get the URLs with has those keywords
+	keywords := datautils.Transform(trending_keywords, func(item *KeywordMap) string { return item.Keyword })
+	return GetBeans(keywords, time_window)
 }
 
 // last_n_days can be between 1 - 30
@@ -111,39 +140,6 @@ func GetTrendingKeywords(time_window int) []KeywordMap {
 		},
 	}
 	return keywordstore.Aggregate(trending_keys_pipeline)
-}
-
-// TODO: put topics filter
-func GetTrendingBeans(time_window int) []Bean {
-	time_window = checkAndFixTimeWindow(time_window)
-
-	// first get the keywords with their counts
-	trending_keywords := GetTrendingKeywords(time_window)
-
-	// then get the URLs with has those keywords
-	keywords := datautils.Transform(trending_keywords, func(item *KeywordMap) string { return item.Keyword })
-	log.Println(keywords)
-	// keyword_filter := store.JSON{
-	// 	"keyword": store.JSON{"$in": keywords},
-	// }
-	// keywordmaps := keywordstore.Get(keyword_filter, nil)
-	// log.Println(len(keywordmaps))
-
-	// // then get the Beans with those urls
-	// urls := datautils.Transform(keywordmaps, func(item *KeywordMap) string { return item.BeanUrl })
-	// // time_val := timeValue(last_n_days)
-	// latest_bean_filter := store.JSON{
-	// 	"url":     store.JSON{"$in": urls},
-	// 	"updated": store.JSON{"$gte": timeValue(time_window)},
-	// }
-	// fields := store.JSON{
-	// 	"text":       0,
-	// 	"embeddings": 0,
-	// 	"keywords":   0,
-	// }
-	// beans := getBeans(latest_bean_filter, fields)
-	// return beans
-	return GetBeans(keywords, time_window)
 }
 
 func timeValue(time_window int) int64 {

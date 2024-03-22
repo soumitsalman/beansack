@@ -85,8 +85,6 @@ func (store *Store[T]) Update(docs []T, filters []JSON) {
 }
 
 func (store *Store[T]) Get(filter JSON, fields JSON) []T {
-	// db.orders.distinct("product_name", { status: "shipped" });
-
 	fields = datautils.AppendMaps(JSON{"_id": 0}, fields)
 	return store.extractFromSearchResult(store.collection.Find(ctx.Background(), filter, options.Find().SetProjection(fields)))
 }
@@ -96,7 +94,7 @@ func (store *Store[T]) Aggregate(pipeline any) []T {
 }
 
 // query documents
-func (store *Store[T]) SimilaritySearch(query_embeddings []float32, filter JSON, top_n int) []T {
+func (store *Store[T]) SimilaritySearch(query_embeddings []float32, filter JSON, fields JSON, top_n int) []T {
 	cosmos_search := JSON{
 		"vector": query_embeddings,
 		"path":   "embeddings", // this hardcoded for ease. All embeddings will be in a field called embeddings
@@ -113,11 +111,7 @@ func (store *Store[T]) SimilaritySearch(query_embeddings []float32, filter JSON,
 			},
 		},
 		{
-			"$project": JSON{
-				"url":     1,
-				"updated": 1,
-				"text":    1,
-			},
+			"$project": datautils.AppendMaps(JSON{"_id": 0}, fields),
 		},
 	}
 	return store.Aggregate(search_pipeline)

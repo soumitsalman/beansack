@@ -22,15 +22,15 @@ const (
 	_RATE_TPS   = 2000
 )
 
-type getQueryParams struct {
-	Window int      `form:"window"`
-	Topics []string `form:"topic"`
+type queryParams struct {
+	Window   int      `form:"window"`
+	Topics   []string `form:"topic"`
+	Trending bool     `form:"trending"`
 }
 
-type getBodyParams struct {
+type bodyParams struct {
 	QueryTexts      []string    `json:"query_texts"`
 	QueryEmbeddings [][]float32 `json:"query_embeddings"`
-	QueryKeywords   []string    `json:"query_keywords"`
 }
 
 func newBeansHandler(ctx *gin.Context) {
@@ -44,11 +44,10 @@ func newBeansHandler(ctx *gin.Context) {
 }
 
 func getTrendingBeansHandler(ctx *gin.Context) {
-	var query_params getQueryParams
+	var query_params queryParams
 	if ctx.BindQuery(&query_params) != nil {
 		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
 	} else {
-		// topics := strings.Split(query_params.Topics, ",")
 		var beans []sdk.Bean
 		if len(query_params.Topics) > 0 {
 			beans = sdk.GetBeans(query_params.Topics, query_params.Window)
@@ -59,8 +58,20 @@ func getTrendingBeansHandler(ctx *gin.Context) {
 	}
 }
 
+func searchBeansHandler(ctx *gin.Context) {
+	var query_params queryParams
+	var body_params bodyParams
+	if ctx.BindQuery(&query_params) != nil || ctx.BindJSON(&body_params) != nil {
+		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
+	} else {
+		var beans []sdk.Bean
+		beans = sdk.SimilaritySearch(body_params.QueryTexts, body_params.QueryEmbeddings, sdk.BeanFilter(query_params.Topics, query_params.Window), 10)
+		ctx.JSON(http.StatusOK, beans)
+	}
+}
+
 func getTrendingTopicsHandler(ctx *gin.Context) {
-	var query_params getQueryParams
+	var query_params queryParams
 	if ctx.BindQuery(&query_params) != nil {
 		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
 	} else {
@@ -86,10 +97,12 @@ func newServer() *gin.Engine {
 	// PUT /beans
 	// TODO: put this under auth
 	group.PUT("/beans", newBeansHandler)
-	// GET /trending/beans?topic=keyword&window=1
-	group.GET("/trending/beans", getTrendingBeansHandler)
-	// GET /trending/topics?window=1
-	group.GET("/trending/topics", getTrendingTopicsHandler)
+	// GET /beans/trending?topic=keyword&window=1
+	group.GET("/beans/trending", getTrendingBeansHandler)
+	// GET /beans/search?window=1
+	group.GET("/beans/search", searchBeansHandler)
+	// GET /topics/trending?window=1
+	group.GET("/topics/trending", getTrendingTopicsHandler)
 	return router
 }
 
