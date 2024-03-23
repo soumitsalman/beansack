@@ -31,6 +31,14 @@ db.runCommand(
   }
 )
 
-// scalar index
-db.getCollection("beans").createIndex({url:1, updated:1})
+// scalar index - these need to exist if i want to use these as filters in vector search
+db.getCollection("beans").createIndex(
+  {
+    updated: -1, // latest stuff should be at the top
+    keywords: 1 // although this may seem like it should be "text", that doesnt work for vector search 
+  },
+  {
+    name: "updated_and_keywords"
+  }
+)
 db.getCollection("beans").createIndex({kind:1})
