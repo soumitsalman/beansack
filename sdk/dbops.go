@@ -32,8 +32,8 @@ const (
 var (
 	wholebeans *store.Store[Bean] = store.New(
 		store.WithConnectionString[Bean](getConnectionString(), BEANSACK, BEANS),
-		store.WithMinSearchScore[Bean](0.0), // TODO: change this to 0.8 in future
-		store.WithSearchTopN[Bean](15),
+		store.WithMinSearchScore[Bean](0.4), // TODO: change this to 0.8 in future
+		store.WithSearchTopN[Bean](5),
 	)
 	// wholebeans_V2 *store.Store[map[string]any] = store.New(store.WithConnectionString[map[string]any](getConnectionString(), BEANSACK, BEANS))
 	keywordstore *store.Store[KeywordMap] = store.New(store.WithConnectionString[KeywordMap](getConnectionString(), BEANSACK, KEYWORDS))
@@ -50,7 +50,6 @@ var (
 		"author":    1,
 		"published": 1,
 		"summary":   1,
-		"keywords":  1,
 	}
 )
 
@@ -108,6 +107,22 @@ func SearchBeans(query_texts []string, query_embeddings [][]float32, filter_opti
 		query_embeddings = datautils.Transform(runRemoteNlpFunction(nlpdriver.CreateTextEmbeddings, query_texts), func(item *TextEmbeddings) []float32 { return item.Embeddings })
 	}
 	filter := makeFilter(filter_options...)
+	beans := make([]Bean, 0, 3*len(query_embeddings)) // approximate length
+	for _, emb := range query_embeddings {
+		beans = append(beans, wholebeans.Search(emb, filter, bean_fields)...)
+	}
+
+	return beans
+}
+
+// TODO: remove this later
+func debug_SearchBeans_V2(query_texts []string, query_embeddings [][]float32, filter store.JSON) []Bean {
+	// if query embeddings is nil or empty then make it up from query_text
+	if len(query_embeddings) == 0 {
+		log.Println("[dbops] Generating embeddings for:", query_texts)
+		query_embeddings = datautils.Transform(runRemoteNlpFunction(nlpdriver.CreateTextEmbeddings, query_texts), func(item *TextEmbeddings) []float32 { return item.Embeddings })
+	}
+	// filter := makeFilter(filter_options...)
 	beans := make([]Bean, 0, 3*len(query_embeddings)) // approximate length
 	for _, emb := range query_embeddings {
 		beans = append(beans, wholebeans.Search(emb, filter, bean_fields)...)

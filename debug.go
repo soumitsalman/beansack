@@ -2,10 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
-	"time"
 
 	"github.com/soumitsalman/beansack/sdk"
 )
@@ -44,18 +42,22 @@ func debug_main() {
 	// }
 
 	// filter for retrieving items for the last 2 days
-	// recent_filter := store.JSON{
+	// filter := store.JSON{
 	// 	"updated": store.JSON{
-	// 		"$gte": time.Now().AddDate(0, 0, -2).Unix(),
+	// 		"$gte": time.Now().AddDate(0, 0, -1).Unix(),
+	// 	},
+	// 	// "kind": sdk.POST,
+	// 	"keywords": store.JSON{
+	// 		"$in": []string{"google"},
 	// 	},
 	// }
 
-	res := sdk.SearchBeans(nil, query_embeddings, sdk.WithTimeWindowFilter(2))
-	fmt.Println(len(res))
-	for _, v := range res {
-		fmt.Println(v.SimilarityScore, time.Unix(v.Updated, 0).Format(time.DateTime), v.Url)
-		// fmt.Printf("%T %v\n", v["similarity_score"], v["similarity_score"])
-	}
+	// res := sdk.SearchBeans_V2(nil, query_embeddings, filter)
+	// fmt.Println(len(res))
+	// for _, v := range res {
+	// 	fmt.Println(v.SimilarityScore, time.Unix(v.Updated, 0).Format(time.DateTime), v.Url)
+	// 	// fmt.Printf("%T %v\n", v["similarity_score"], v["similarity_score"])
+	// }
 
 	// keywords := sdk.GetTrendingKeywords(2)
 	// datautils.ForEach(keywords, func(item *sdk.KeywordMap) {
