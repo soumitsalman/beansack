@@ -2,7 +2,6 @@ package sdk
 
 import (
 	"log"
-	"os"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -18,8 +17,8 @@ type ParrotBoxDriver struct {
 	url string
 }
 
-func NewParrotBoxDriver() *ParrotBoxDriver {
-	return &ParrotBoxDriver{getParrotBoxUrl()}
+func NewParrotBoxDriver(url string) *ParrotBoxDriver {
+	return &ParrotBoxDriver{url}
 }
 
 // func (driver *ParrotBoxDriver) CreateTextEmbeddings_v2(texts []string) []map[string]any {
@@ -65,8 +64,4 @@ func postRequest[T any](url, endpoint string, body any) ([]T, error) {
 		return nil, err
 	}
 	return result, nil
-}
-
-func getParrotBoxUrl() string {
-	return os.Getenv("PARROTBOX_URL")
 }

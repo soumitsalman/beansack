@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -38,7 +39,7 @@ func newBeansHandler(ctx *gin.Context) {
 	if ctx.BindJSON(&beans) != nil {
 		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
 	} else {
-		go sdk.AddBeans(beans)
+		sdk.AddBeans(beans)
 		ctx.String(http.StatusOK, _SUCCESS_MESSAGE)
 	}
 }
@@ -120,6 +121,9 @@ func newServer() *gin.Engine {
 }
 
 func main() {
+	if err := sdk.InitializeBeanSack(getDBConnectionString(), getParrotBoxUrl()); err != nil {
+		log.Fatalln("initialization not working", err)
+	}
 	newServer().Run()
 	// debug_main()
 }

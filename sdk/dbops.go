@@ -3,7 +3,6 @@ package sdk
 import (
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"time"
 
@@ -30,14 +29,9 @@ const (
 )
 
 var (
-	wholebeans *store.Store[Bean] = store.New(
-		store.WithConnectionString[Bean](getConnectionString(), BEANSACK, BEANS),
-		store.WithMinSearchScore[Bean](0.4), // TODO: change this to 0.8 in future
-		store.WithSearchTopN[Bean](5),
-	)
-	// wholebeans_V2 *store.Store[map[string]any] = store.New(store.WithConnectionString[map[string]any](getConnectionString(), BEANSACK, BEANS))
-	keywordstore *store.Store[KeywordMap] = store.New(store.WithConnectionString[KeywordMap](getConnectionString(), BEANSACK, KEYWORDS))
-	nlpdriver    *ParrotBoxDriver         = NewParrotBoxDriver()
+	wholebeans   *store.Store[Bean]
+	keywordstore *store.Store[KeywordMap]
+	nlpdriver    *ParrotBoxDriver
 )
 
 var (
@@ -53,32 +47,18 @@ var (
 	}
 )
 
-type Option func(filter store.JSON)
-
-func WithKeywordsFilter(keywords []string) Option {
-	return func(filter store.JSON) {
-		filter["keywords"] = store.JSON{"$in": keywords}
+func InitializeBeanSack(db_conn_str, parrotbox_url string) error {
+	wholebeans = store.New(
+		store.WithConnectionString[Bean](db_conn_str, BEANSACK, BEANS),
+		store.WithMinSearchScore[Bean](0.4), // TODO: change this to 0.8 in future
+		store.WithSearchTopN[Bean](5),
+	)
+	keywordstore = store.New(store.WithConnectionString[KeywordMap](db_conn_str, BEANSACK, KEYWORDS))
+	nlpdriver = NewParrotBoxDriver(parrotbox_url)
+	if wholebeans == nil || keywordstore == nil {
+		return BeanSackError("Initialization Failed. db_conn_str Not working: " + db_conn_str)
 	}
-}
-
-func WithTrendingFilter(time_window int) Option {
-	return func(filter store.JSON) {
-		keywords := datautils.Transform(GetTrendingKeywords(time_window), func(item *KeywordMap) string { return item.Keyword })
-		filter["keywords"] = store.JSON{"$in": keywords}
-		filter["updated"] = store.JSON{"$gte": timeValue(checkAndFixTimeWindow(time_window))}
-	}
-}
-
-func WithTimeWindowFilter(time_window int) Option {
-	return func(filter store.JSON) {
-		filter["updated"] = store.JSON{"$gte": timeValue(checkAndFixTimeWindow(time_window))}
-	}
-}
-
-func WithKindFilter(kind string) Option {
-	return func(filter store.JSON) {
-		filter["kind"] = kind
-	}
+	return nil
 }
 
 func AddBeans(beans []Bean) error {
@@ -96,7 +76,7 @@ func AddBeans(beans []Bean) error {
 		return err
 	}
 	// once the main docs are up, update them with sentiment, summary, keywords and embeddings
-	updateBeansWithAttributes(beans)
+	go updateBeansWithAttributes(beans)
 	return nil
 }
 
@@ -192,9 +172,9 @@ func checkAndFixTimeWindow(time_window int) int {
 	}
 }
 
-type NlpDriverError string
+type BeanSackError string
 
-func (err NlpDriverError) Error() string {
+func (err BeanSackError) Error() string {
 	return string(err)
 }
 
@@ -202,54 +182,57 @@ func updateBeansWithAttributes(beans []Bean) {
 	filters := getPointerFilters(beans)
 	texts := getTextFields(beans)
 
-	// store embeddings
-	embs := runRemoteNlpFunction(nlpdriver.CreateBeanEmbeddings, texts)
-	wholebeans.Update(embs, filters)
+	// try small batches
+	for batch_i := 0; batch_i < len(texts); batch_i += _NLP_OPS_BATCH_SIZE {
+		batch_texts := datautils.SafeSlice(texts, batch_i, batch_i+_NLP_OPS_BATCH_SIZE)
+		batch_filters := datautils.SafeSlice(filters, batch_i, batch_i+_NLP_OPS_BATCH_SIZE)
+		batch_beans := datautils.SafeSlice(beans, batch_i, batch_i+_NLP_OPS_BATCH_SIZE)
 
-	// store summary
-	summaries := runRemoteNlpFunction(nlpdriver.CreateBeanSummary, texts)
-	wholebeans.Update(summaries, filters)
+		// store embeddings
+		embs := runRemoteNlpFunction(nlpdriver.CreateBeanEmbeddings, batch_texts)
+		wholebeans.Update(embs, batch_filters)
 
-	// store the keywords in combination with existing keywords
-	// both in keywords collection
-	// and the beans collection for easy retrieval
-	keywords_list := runRemoteNlpFunction(nlpdriver.CreateBeanKeywords, texts)
-	for i := range beans {
-		keywords_list[i].Keywords = append(beans[i].Keywords, keywords_list[i].Keywords...)
-		keywordstore.Add(datautils.Transform(keywords_list[i].Keywords, func(item *string) KeywordMap {
-			*item = strings.ToLower(*item)
-			return KeywordMap{
-				Keyword: strings.ToLower(*item),
-				BeanUrl: beans[i].Url,
-				Updated: beans[i].Updated,
-			}
-		}))
+		// store summary
+		summaries := runRemoteNlpFunction(nlpdriver.CreateBeanSummary, batch_texts)
+		wholebeans.Update(summaries, batch_filters)
+
+		// store the keywords in combination with existing keywords
+		// both in keywords collection
+		// and the beans collection for easy retrieval
+		keywords_list := runRemoteNlpFunction(nlpdriver.CreateBeanKeywords, batch_texts)
+		for i := range batch_beans {
+			keywords_list[i].Keywords = append(batch_beans[i].Keywords, keywords_list[i].Keywords...)
+			keywordstore.Add(datautils.Transform(keywords_list[i].Keywords, func(item *string) KeywordMap {
+				*item = strings.ToLower(*item)
+				return KeywordMap{
+					Keyword: strings.ToLower(*item),
+					BeanUrl: batch_beans[i].Url,
+					Updated: batch_beans[i].Updated,
+				}
+			}))
+		}
+		wholebeans.Update(keywords_list, batch_filters)
 	}
-	wholebeans.Update(keywords_list, filters)
 }
 
 func runRemoteNlpFunction[T any](nlp_func func(texts []string) ([]T, error), texts []string) []T {
-	res := make([]T, 0, len(texts))
+	var res []T
+	// retry for each batch
+	retry.Do(func() error {
+		output, err := nlp_func(texts)
+		// something went wrong with the function so try again
+		if err != nil {
+			return err
+		} else if len(output) != len(texts) {
+			msg := fmt.Sprintf("[dbops] Remote NLP function failed. Output length %d does not match input length %d", len(output), len(texts))
+			log.Println(msg)
+			return BeanSackError(msg)
+		}
+		// generation succeeded
+		res = output
+		return nil
+	}, retry.Delay(_RETRY_DELAY))
 
-	// try small batches
-	for i := 0; i < len(texts); i += _NLP_OPS_BATCH_SIZE {
-		input := datautils.SafeSlice(texts, i, i+_NLP_OPS_BATCH_SIZE)
-		// retry for each batch
-		retry.Do(func() error {
-			output, err := nlp_func(input)
-			// something went wrong with the function so try again
-			if err != nil {
-				return err
-			} else if len(output) != len(input) {
-				msg := fmt.Sprintf("[dbops] Remote NLP function failed. Output length %d does not match input length %d", len(output), len(input))
-				log.Println(msg)
-				return NlpDriverError(msg)
-			}
-			// generation succeeded
-			res = append(res, output...)
-			return nil
-		}, retry.Delay(_RETRY_DELAY))
-	}
 	return res
 }
 
@@ -266,8 +249,4 @@ func getTextFields(beans []Bean) []string {
 	return datautils.Transform(beans, func(bean *Bean) string {
 		return bean.Text
 	})
-}
-
-func getConnectionString() string {
-	return os.Getenv("DB_CONNECTION_STRING")
 }
