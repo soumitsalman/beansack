@@ -21,6 +21,8 @@ type JSON map[string]any
 type Store[T any] struct {
 	name             string
 	collection       *mongo.Collection
+	get_id           func(data *T) JSON
+	equals           func(a, b *T) bool
 	search_min_score float64
 	search_top_n     int
 }
@@ -72,6 +74,13 @@ func WithSearchTopN[T any](top_n int) Option[T] {
 	}
 }
 
+func WithDataIDAndEqualsFunction[T any](id_func func(data *T) JSON, equals func(a, b *T) bool) Option[T] {
+	return func(store *Store[T]) {
+		store.get_id = id_func
+		store.equals = equals
+	}
+}
+
 func (store *Store[T]) Add(docs []T) ([]any, error) {
 	// this is done for error handling for mongo db
 	if len(docs) == 0 {
@@ -79,7 +88,14 @@ func (store *Store[T]) Add(docs []T) ([]any, error) {
 		return nil, nil
 	}
 
-	// don't insert if it already exists when there is
+	// don't insert if it already exists
+	// if there is no id function then treat each item as unique
+	if store.get_id != nil && store.equals != nil {
+		existing_items := store.Get(JSON{"$or": store.getIDs(docs)}, nil)
+		docs = datautils.Filter(docs, func(item *T) bool {
+			return !datautils.In(*item, existing_items, store.equals)
+		})
+	}
 
 	res, err := store.collection.InsertMany(ctx.Background(), datautils.Transform(docs, func(item *T) any { return *item }))
 	if err != nil {
@@ -108,11 +124,11 @@ func (store *Store[T]) Update(docs []T, filters []JSON) {
 
 func (store *Store[T]) Get(filter JSON, fields JSON) []T {
 	// fields = datautils.AppendMaps(JSON{"_id": 0}, fields)
-	return store.extractFromSearchResult(store.collection.Find(ctx.Background(), filter, options.Find().SetProjection(fields)))
+	return store.extractFromCursor(store.collection.Find(ctx.Background(), filter, options.Find().SetProjection(fields)))
 }
 
 func (store *Store[T]) Aggregate(pipeline any) []T {
-	return store.extractFromSearchResult(store.collection.Aggregate(ctx.Background(), pipeline))
+	return store.extractFromCursor(store.collection.Aggregate(ctx.Background(), pipeline))
 }
 
 // query documents
@@ -154,7 +170,13 @@ func (store *Store[T]) Search(query_embeddings []float32, filter JSON, fields JS
 	return store.Aggregate(search_pipeline)
 }
 
-func (store *Store[T]) extractFromSearchResult(cursor *mongo.Cursor, err error) []T {
+func (store *Store[T]) getIDs(items []T) []JSON {
+	return datautils.Transform(items, func(item *T) JSON {
+		return store.get_id(item)
+	})
+}
+
+func (store *Store[T]) extractFromCursor(cursor *mongo.Cursor, err error) []T {
 	background := ctx.Background()
 	if err != nil {
 		log.Printf("[%s]: Couldn't retrieve items. %v\n", store.name, err)

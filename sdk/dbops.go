@@ -47,11 +47,18 @@ var (
 	}
 )
 
+type BeanSackError string
+
+func (err BeanSackError) Error() string {
+	return string(err)
+}
+
 func InitializeBeanSack(db_conn_str, parrotbox_url string) error {
 	wholebeans = store.New(
 		store.WithConnectionString[Bean](db_conn_str, BEANSACK, BEANS),
 		store.WithMinSearchScore[Bean](0.4), // TODO: change this to 0.8 in future
 		store.WithSearchTopN[Bean](5),
+		store.WithDataIDAndEqualsFunction(func(data *Bean) store.JSON { return store.JSON{"url": data.Url} }, Equals),
 	)
 	keywordstore = store.New(store.WithConnectionString[KeywordMap](db_conn_str, BEANSACK, KEYWORDS))
 	nlpdriver = NewParrotBoxDriver(parrotbox_url)
@@ -149,35 +156,6 @@ func GetTrendingKeywords(time_window int) []KeywordMap {
 	return keywordstore.Aggregate(trending_keys_pipeline)
 }
 
-func makeFilter(filter_options ...Option) store.JSON {
-	filter := store.JSON{}
-	for _, opt := range filter_options {
-		opt(filter)
-	}
-	return filter
-}
-
-func timeValue(time_window int) int64 {
-	return time.Now().AddDate(0, 0, -time_window).Unix()
-}
-
-func checkAndFixTimeWindow(time_window int) int {
-	switch {
-	case time_window > _FOUR_WEEKS:
-		return _FOUR_WEEKS
-	case time_window < _ONE_DAY:
-		return _ONE_DAY
-	default:
-		return time_window
-	}
-}
-
-type BeanSackError string
-
-func (err BeanSackError) Error() string {
-	return string(err)
-}
-
 func updateBeansWithAttributes(beans []Bean) {
 	filters := getPointerFilters(beans)
 	texts := getTextFields(beans)
@@ -249,4 +227,27 @@ func getTextFields(beans []Bean) []string {
 	return datautils.Transform(beans, func(bean *Bean) string {
 		return bean.Text
 	})
+}
+
+func makeFilter(filter_options ...Option) store.JSON {
+	filter := store.JSON{}
+	for _, opt := range filter_options {
+		opt(filter)
+	}
+	return filter
+}
+
+func timeValue(time_window int) int64 {
+	return time.Now().AddDate(0, 0, -time_window).Unix()
+}
+
+func checkAndFixTimeWindow(time_window int) int {
+	switch {
+	case time_window > _FOUR_WEEKS:
+		return _FOUR_WEEKS
+	case time_window < _ONE_DAY:
+		return _ONE_DAY
+	default:
+		return time_window
+	}
 }

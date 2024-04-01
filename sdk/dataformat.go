@@ -50,7 +50,7 @@ type KeywordMap struct {
 	Count   int    `bson:"count,omitempty"`
 }
 
-func (a *Bean) Equals(b *Bean) bool {
+func Equals(a, b *Bean) bool {
 	return (a.Url == b.Url)
 }
 

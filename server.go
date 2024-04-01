@@ -24,9 +24,8 @@ const (
 )
 
 type queryParams struct {
-	Window   int      `form:"window"`
-	Topics   []string `form:"topic"`
-	Trending bool     `form:"trending"`
+	Window int      `form:"window"`
+	Topics []string `form:"topic"`
 }
 
 type bodyParams struct {
@@ -70,11 +69,12 @@ func queryBeansHandler(ctx *gin.Context, queryBeans func(filters []sdk.Option) [
 	filters := make([]sdk.Option, 0, 3)
 	// Assign a time window whether it is specified or not. If it is not specified it will become 1 day
 	filters = append(filters, sdk.WithTimeWindowFilter(query_params.Window))
-	if query_params.Trending {
-		filters = append(filters, sdk.WithTrendingFilter(query_params.Window))
-	}
+
+	// if topics are specified no need to determine the trending keywords
 	if len(query_params.Topics) > 0 {
 		filters = append(filters, sdk.WithKeywordsFilter(query_params.Topics))
+	} else {
+		filters = append(filters, sdk.WithTrendingFilter(query_params.Window))
 	}
 
 	if res := queryBeans(filters); res != nil {
@@ -112,11 +112,11 @@ func newServer() *gin.Engine {
 	// TODO: put this under auth
 	group.PUT("/beans", newBeansHandler)
 	// GET /beans/trending?topic=keyword&window=1
-	group.GET("/beans/trending", getBeansHandler)
+	group.GET("/trending/beans", getBeansHandler)
 	// GET /beans/search?window=1
-	group.GET("/beans/search", searchBeansHandler)
+	group.GET("/trending/beans/search", searchBeansHandler)
 	// GET /topics/trending?window=1
-	group.GET("/topics/trending", getTrendingTopicsHandler)
+	group.GET("/trending/topics", getTrendingTopicsHandler)
 	return router
 }
 
