@@ -10,14 +10,14 @@ const (
 )
 
 type Bean struct {
-	Url       string `json:"url,omitempty" bson:"url,omitempty"`         // this is unique across each item regardless of the source and will be used as ID
-	Updated   int64  `json:"updated,omitempty" bson:"updated,omitempty"` // date of update of the post or comment. Empty for subreddits
-	Source    string `json:"source,omitempty" bson:"source,omitempty"`   // which social media source is this coming from
-	Title     string `json:"title,omitempty" bson:"title,omitempty"`     // represents text title of the item. Applies to subreddits and posts but not comments
-	Kind      string `json:"kind,omitempty" bson:"kind,omitempty"`
-	Text      string `json:"text,omitempty" bson:"text,omitempty"`
-	Author    string `json:"author,omitempty" bson:"author,omitempty"`       // author of posts or comments. Empty for subreddits
-	Published int64  `json:"published,omitempty" bson:"published,omitempty"` // date of creation of the post or comment. Empty for subreddits
+	Url     string `json:"url,omitempty" bson:"url,omitempty"`         // this is unique across each item regardless of the source and will be used as ID
+	Updated int64  `json:"updated,omitempty" bson:"updated,omitempty"` // date of update of the post or comment. Empty for subreddits
+	Source  string `json:"source,omitempty" bson:"source,omitempty"`   // which social media source is this coming from
+	Title   string `json:"title,omitempty" bson:"title,omitempty"`     // represents text title of the item. Applies to subreddits and posts but not comments
+	Kind    string `json:"kind,omitempty" bson:"kind,omitempty"`
+	Text    string `json:"text,omitempty" bson:"text,omitempty"`
+	Author  string `json:"author,omitempty" bson:"author,omitempty"`   // author of posts or comments. Empty for subreddits
+	Created int64  `json:"created,omitempty" bson:"created,omitempty"` // date of creation of the post or comment. Empty for subreddits
 
 	Keywords   []string  `json:"keywords,omitempty" bson:"keywords,omitempty"`     // This can come from input and/or computed from a small language model
 	Summary    string    `json:"summary,omitempty" bson:"summary,omitempty"`       // computed from a small language model

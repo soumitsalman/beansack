@@ -18,6 +18,7 @@ const (
 )
 
 const (
+	_MIN_TEXT_LENGTH    = 20
 	_MAX_TEXT_LENGTH    = 4096 * 4
 	_MIN_KEYWORD_LENGTH = 3
 	_NLP_OPS_BATCH_SIZE = 10
@@ -32,6 +33,7 @@ var (
 	wholebeans   *store.Store[Bean]
 	keywordstore *store.Store[KeywordMap]
 	nlpdriver    *ParrotBoxDriver
+	nlpqueue     chan []Bean
 )
 
 var (
@@ -58,18 +60,22 @@ func InitializeBeanSack(db_conn_str, parrotbox_url string) error {
 		store.WithConnectionString[Bean](db_conn_str, BEANSACK, BEANS),
 		store.WithMinSearchScore[Bean](0.4), // TODO: change this to 0.8 in future
 		store.WithSearchTopN[Bean](5),
-		store.WithDataIDAndEqualsFunction(func(data *Bean) store.JSON { return store.JSON{"url": data.Url} }, Equals),
+		store.WithDataIDAndEqualsFunction(getBeanId, Equals),
 	)
 	keywordstore = store.New(store.WithConnectionString[KeywordMap](db_conn_str, BEANSACK, KEYWORDS))
-	nlpdriver = NewParrotBoxDriver(parrotbox_url)
 	if wholebeans == nil || keywordstore == nil {
 		return BeanSackError("Initialization Failed. db_conn_str Not working: " + db_conn_str)
 	}
+	nlpdriver = NewParrotBoxDriver(parrotbox_url)
+	nlpqueue = make(chan []Bean, 100)
+	go startNlpQueue()
+
 	return nil
 }
 
 func AddBeans(beans []Bean) error {
 	// remove items without a text body
+	beans = datautils.Filter(beans, func(item *Bean) bool { return len(item.Text) > _MIN_TEXT_LENGTH })
 
 	// assign updated time
 	updated_time := time.Now().Unix()
@@ -83,7 +89,7 @@ func AddBeans(beans []Bean) error {
 		return err
 	}
 	// once the main docs are up, update them with sentiment, summary, keywords and embeddings
-	go updateBeansWithAttributes(beans)
+	go queueForNlp(beans)
 	return nil
 }
 
@@ -156,40 +162,47 @@ func GetTrendingKeywords(time_window int) []KeywordMap {
 	return keywordstore.Aggregate(trending_keys_pipeline)
 }
 
-func updateBeansWithAttributes(beans []Bean) {
-	filters := getPointerFilters(beans)
-	texts := getTextFields(beans)
-
-	// try small batches
-	for batch_i := 0; batch_i < len(texts); batch_i += _NLP_OPS_BATCH_SIZE {
-		batch_texts := datautils.SafeSlice(texts, batch_i, batch_i+_NLP_OPS_BATCH_SIZE)
-		batch_filters := datautils.SafeSlice(filters, batch_i, batch_i+_NLP_OPS_BATCH_SIZE)
+func queueForNlp(beans []Bean) {
+	// break them in chunks
+	for batch_i := 0; batch_i < len(beans); batch_i += _NLP_OPS_BATCH_SIZE {
 		batch_beans := datautils.SafeSlice(beans, batch_i, batch_i+_NLP_OPS_BATCH_SIZE)
+		nlpqueue <- batch_beans
+	}
+}
+
+func startNlpQueue() {
+	for {
+		beans := <-nlpqueue
+
+		log.Println("NLP processing a batch of", len(beans), "items")
+		// process batch
+		filters := getBeanIdFilters(beans)
+		texts := getTextFields(beans)
 
 		// store embeddings
-		embs := runRemoteNlpFunction(nlpdriver.CreateBeanEmbeddings, batch_texts)
-		wholebeans.Update(embs, batch_filters)
+		embs := runRemoteNlpFunction(nlpdriver.CreateBeanEmbeddings, texts)
+		wholebeans.Update(embs, filters)
 
 		// store summary
-		summaries := runRemoteNlpFunction(nlpdriver.CreateBeanSummary, batch_texts)
-		wholebeans.Update(summaries, batch_filters)
+		summaries := runRemoteNlpFunction(nlpdriver.CreateBeanSummary, texts)
+		wholebeans.Update(summaries, filters)
 
 		// store the keywords in combination with existing keywords
 		// both in keywords collection
 		// and the beans collection for easy retrieval
-		keywords_list := runRemoteNlpFunction(nlpdriver.CreateBeanKeywords, batch_texts)
-		for i := range batch_beans {
-			keywords_list[i].Keywords = append(batch_beans[i].Keywords, keywords_list[i].Keywords...)
+		keywords_list := runRemoteNlpFunction(nlpdriver.CreateBeanKeywords, texts)
+		for i := range beans {
+			keywords_list[i].Keywords = append(beans[i].Keywords, keywords_list[i].Keywords...)
 			keywordstore.Add(datautils.Transform(keywords_list[i].Keywords, func(item *string) KeywordMap {
 				*item = strings.ToLower(*item)
 				return KeywordMap{
 					Keyword: strings.ToLower(*item),
-					BeanUrl: batch_beans[i].Url,
-					Updated: batch_beans[i].Updated,
+					BeanUrl: beans[i].Url,
+					Updated: beans[i].Updated,
 				}
 			}))
 		}
-		wholebeans.Update(keywords_list, batch_filters)
+		wholebeans.Update(keywords_list, filters)
 	}
 }
 
@@ -214,12 +227,13 @@ func runRemoteNlpFunction[T any](nlp_func func(texts []string) ([]T, error), tex
 	return res
 }
 
-func getPointerFilters(beans []Bean) []store.JSON {
+func getBeanId(bean *Bean) store.JSON {
+	return store.JSON{"url": bean.Url}
+}
+
+func getBeanIdFilters(beans []Bean) []store.JSON {
 	return datautils.Transform(beans, func(bean *Bean) store.JSON {
-		return store.JSON{
-			"url":     bean.Url,
-			"updated": bean.Updated,
-		}
+		return getBeanId(bean)
 	})
 }
 
