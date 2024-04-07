@@ -4,6 +4,7 @@ import (
 	ctx "context"
 	"fmt"
 	"log"
+	"strings"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -81,7 +82,7 @@ func WithDataIDAndEqualsFunction[T any](id_func func(data *T) JSON, equals func(
 	}
 }
 
-func (store *Store[T]) Add(docs []T) ([]any, error) {
+func (store *Store[T]) Add(docs []T) ([]T, error) {
 	// this is done for error handling for mongo db
 	if len(docs) == 0 {
 		log.Printf("[%s]: Empty list of docs, nothing to insert.\n", store.name)
@@ -103,7 +104,7 @@ func (store *Store[T]) Add(docs []T) ([]any, error) {
 		return nil, err
 	}
 	log.Printf("[%s]: %d items inserted.\n", store.name, len(res.InsertedIDs))
-	return res.InsertedIDs, nil
+	return docs, nil
 }
 
 func (store *Store[T]) Update(docs []T, filters []JSON) {
@@ -123,7 +124,6 @@ func (store *Store[T]) Update(docs []T, filters []JSON) {
 }
 
 func (store *Store[T]) Get(filter JSON, fields JSON) []T {
-	// fields = datautils.AppendMaps(JSON{"_id": 0}, fields)
 	return store.extractFromCursor(store.collection.Find(ctx.Background(), filter, options.Find().SetProjection(fields)))
 }
 
@@ -131,8 +131,37 @@ func (store *Store[T]) Aggregate(pipeline any) []T {
 	return store.extractFromCursor(store.collection.Aggregate(ctx.Background(), pipeline))
 }
 
+func (store *Store[T]) TextSearch(query_texts []string, filter JSON, fields JSON) []T {
+	search_pipeline := []JSON{
+		{
+			"$match": datautils.AppendMaps(
+				JSON{
+					"$text": JSON{"$search": strings.Join(query_texts, ", ")},
+				},
+				filter),
+		},
+		{
+			"$project": datautils.AppendMaps(
+				JSON{
+					"_id":              0,
+					"similarity_score": JSON{"$meta": "textScore"},
+				},
+				fields),
+		},
+		{
+			"$match": JSON{
+				"similarity_score": JSON{"$gt": 1},
+			},
+		},
+		{
+			"$sort": JSON{"similarity_score": -1},
+		},
+	}
+	return store.Aggregate(search_pipeline)
+}
+
 // query documents
-func (store *Store[T]) Search(query_embeddings []float32, filter JSON, fields JSON) []T {
+func (store *Store[T]) VectorSearch(query_embeddings []float32, filter JSON, fields JSON) []T {
 	cosmos_search := JSON{
 		"vector": query_embeddings,
 		"path":   "embeddings", // this hardcoded for ease. All embeddings will be in a field called embeddings

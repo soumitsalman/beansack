@@ -14,7 +14,7 @@ import (
 // GET /trending/topics?window=1
 
 const (
-	_ERROR_MESSAGE   = "YO! do you even code?! Read this: https://github.com/soumitsalman/beansack."
+	_ERROR_MESSAGE   = "YO! do you even code?! Input format is fucked. Read this: https://github.com/soumitsalman/beansack."
 	_SUCCESS_MESSAGE = "I gotchu."
 )
 
@@ -24,13 +24,13 @@ const (
 )
 
 type queryParams struct {
-	Window int      `form:"window"`
-	Topics []string `form:"topic"`
+	Window   int      `form:"window"`
+	Keywords []string `form:"keyword"`
 }
 
 type bodyParams struct {
-	QueryTexts      []string    `json:"query_texts"`
-	QueryEmbeddings [][]float32 `json:"query_embeddings"`
+	QueryTexts    []string `json:"query_texts,omitempty"`
+	SearchContext string   `json:"search_context,omitempty"`
 }
 
 func newBeansHandler(ctx *gin.Context) {
@@ -44,44 +44,37 @@ func newBeansHandler(ctx *gin.Context) {
 }
 
 func getBeansHandler(ctx *gin.Context) {
-	queryBeansHandler(ctx, func(filters []sdk.Option) []sdk.Bean {
-		return sdk.GetBeans(filters...)
-	})
+	var query_params queryParams
+	if ctx.BindQuery(&query_params) != nil {
+		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
+		return
+	}
+
+	var res []sdk.Bean
+	if len(query_params.Keywords) > 0 {
+		res = sdk.GetBeans(sdk.WithTimeWindowFilter(query_params.Window), sdk.WithKeywordsFilter(query_params.Keywords))
+	} else {
+		res = sdk.GetBeans(sdk.WithTrendingFilter(query_params.Window))
+	}
+	ctx.JSON(http.StatusOK, res)
 }
 
 func searchBeansHandler(ctx *gin.Context) {
-	queryBeansHandler(ctx, func(filters []sdk.Option) []sdk.Bean {
-		var body_params bodyParams
-		if ctx.BindJSON(&body_params) != nil {
-			return nil
-		}
-		return sdk.SearchBeans(body_params.QueryTexts, body_params.QueryEmbeddings, filters...)
-	})
-}
-
-func queryBeansHandler(ctx *gin.Context, queryBeans func(filters []sdk.Option) []sdk.Bean) {
 	var query_params queryParams
-	if ctx.BindQuery(&query_params) != nil {
-		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE+" query params are fucked up")
+	var body_params bodyParams
+	if ctx.BindQuery(&query_params) != nil || ctx.BindJSON(&body_params) != nil {
+		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
 		return
 	}
-	// create filters
-	filters := make([]sdk.Option, 0, 3)
-	// Assign a time window whether it is specified or not. If it is not specified it will become 1 day
-	filters = append(filters, sdk.WithTimeWindowFilter(query_params.Window))
 
-	// if topics are specified no need to determine the trending keywords
-	if len(query_params.Topics) > 0 {
-		filters = append(filters, sdk.WithKeywordsFilter(query_params.Topics))
-	} else {
-		filters = append(filters, sdk.WithTrendingFilter(query_params.Window))
+	var res []sdk.Bean
+	if len(body_params.QueryTexts) > 0 {
+		res = sdk.TextSearchBeans(body_params.QueryTexts, sdk.WithTimeWindowFilter(query_params.Window))
+	} else if len(body_params.SearchContext) > 0 {
+		res = sdk.SimilaritySearchBeans(body_params.SearchContext, sdk.WithTimeWindowFilter(query_params.Window))
 	}
 
-	if res := queryBeans(filters); res != nil {
-		ctx.JSON(http.StatusOK, res)
-	} else {
-		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE+" The body may be fucked up")
-	}
+	ctx.JSON(http.StatusOK, res)
 }
 
 func getTrendingTopicsHandler(ctx *gin.Context) {
@@ -108,15 +101,21 @@ func newServer() *gin.Engine {
 	router := gin.Default()
 	group := router.Group("/")
 	group.Use(initializeRateLimiter())
+
 	// PUT /beans
 	// TODO: put this under auth
 	group.PUT("/beans", newBeansHandler)
-	// GET /beans/trending?topic=keyword&window=1
-	group.GET("/trending/beans", getBeansHandler)
+
+	// GET /beans/trending?window=1&keyword=amazon&keyword=apple
+	group.GET("/beans/trending", getBeansHandler)
+
 	// GET /beans/search?window=1
-	group.GET("/trending/beans/search", searchBeansHandler)
+	// query_texts: []string
+	// similarity_text: string
+	group.GET("/beans/search", searchBeansHandler)
+
 	// GET /topics/trending?window=1
-	group.GET("/trending/topics", getTrendingTopicsHandler)
+	group.GET("/topics/trending", getTrendingTopicsHandler)
 	return router
 }
 

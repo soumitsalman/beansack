@@ -38,14 +38,15 @@ var (
 
 var (
 	bean_fields = store.JSON{
-		"url":       1,
-		"updated":   1,
-		"source":    1,
-		"title":     1,
-		"kind":      1,
-		"author":    1,
-		"published": 1,
-		"summary":   1,
+		"url":     1,
+		"updated": 1,
+		"source":  1,
+		"title":   1,
+		"kind":    1,
+		"author":  1,
+		"created": 1,
+		"summary": 1,
+		"keyword": 1,
 	}
 )
 
@@ -84,7 +85,7 @@ func AddBeans(beans []Bean) error {
 		item.Text = datautils.TruncateTextWithEllipsis(item.Text, _MAX_TEXT_LENGTH)
 	})
 
-	_, err := wholebeans.Add(beans)
+	beans, err := wholebeans.Add(beans)
 	if err != nil {
 		return err
 	}
@@ -93,19 +94,20 @@ func AddBeans(beans []Bean) error {
 	return nil
 }
 
-func SearchBeans(query_texts []string, query_embeddings [][]float32, filter_options ...Option) []Bean {
-	// if query embeddings is nil or empty then make it up from query_text
-	if len(query_embeddings) == 0 {
-		log.Println("[dbops] Generating embeddings for:", query_texts)
-		query_embeddings = datautils.Transform(runRemoteNlpFunction(nlpdriver.CreateTextEmbeddings, query_texts), func(item *TextEmbeddings) []float32 { return item.Embeddings })
-	}
-	filter := makeFilter(filter_options...)
-	beans := make([]Bean, 0, 3*len(query_embeddings)) // approximate length
-	for _, emb := range query_embeddings {
-		beans = append(beans, wholebeans.Search(emb, filter, bean_fields)...)
-	}
+func GetBeans(filter_options ...Option) []Bean {
+	return wholebeans.Get(makeFilter(filter_options...), bean_fields)
+}
 
-	return beans
+func TextSearchBeans(query_texts []string, filter_options ...Option) []Bean {
+	filter := makeFilter(filter_options...)
+	return wholebeans.TextSearch(query_texts, filter, bean_fields)
+}
+
+func SimilaritySearchBeans(search_context string, filter_options ...Option) []Bean {
+	log.Println("[dbops] Generating embeddings for:", search_context)
+	search_vector := runRemoteNlpFunction(nlpdriver.CreateTextEmbeddings, []string{search_context})[0]
+	filter := makeFilter(filter_options...)
+	return wholebeans.VectorSearch(search_vector.Embeddings, filter, bean_fields)
 }
 
 // TODO: remove this later
@@ -118,14 +120,10 @@ func debug_SearchBeans_V2(query_texts []string, query_embeddings [][]float32, fi
 	// filter := makeFilter(filter_options...)
 	beans := make([]Bean, 0, 3*len(query_embeddings)) // approximate length
 	for _, emb := range query_embeddings {
-		beans = append(beans, wholebeans.Search(emb, filter, bean_fields)...)
+		beans = append(beans, wholebeans.VectorSearch(emb, filter, bean_fields)...)
 	}
 
 	return beans
-}
-
-func GetBeans(filter_options ...Option) []Bean {
-	return wholebeans.Get(makeFilter(filter_options...), bean_fields)
 }
 
 // last_n_days can be between 1 - 30
