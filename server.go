@@ -23,9 +23,28 @@ const (
 	_RATE_TPS   = 2000
 )
 
+const (
+	_SERVER_DEFAULT_WINDOW = 1
+	_SERVER_DEFAULT_KIND   = sdk.ARTICLE
+)
+
 type queryParams struct {
 	Window   int      `form:"window"`
 	Keywords []string `form:"keyword"`
+	Kind     string   `form:"kind"`
+}
+
+func (params *queryParams) assignDefaults() queryParams {
+	if params.Window == 0 {
+		params.Window = _SERVER_DEFAULT_WINDOW
+	}
+	if params.Kind == "" {
+		params.Kind = _SERVER_DEFAULT_KIND
+	}
+	if len(params.Keywords) == 0 {
+		params.Keywords = nil
+	}
+	return *params
 }
 
 type bodyParams struct {
@@ -50,11 +69,13 @@ func getBeansHandler(ctx *gin.Context) {
 		return
 	}
 
+	query_params = query_params.assignDefaults()
+
 	var res []sdk.Bean
 	if len(query_params.Keywords) > 0 {
-		res = sdk.GetBeans(sdk.WithTimeWindowFilter(query_params.Window), sdk.WithKeywordsFilter(query_params.Keywords))
+		res = sdk.GetBeans(sdk.WithKindFilter(query_params.Kind), sdk.WithTimeWindowFilter(query_params.Window), sdk.WithKeywordsFilter(query_params.Keywords))
 	} else {
-		res = sdk.GetBeans(sdk.WithTrendingFilter(query_params.Window))
+		res = sdk.GetBeans(sdk.WithKindFilter(query_params.Kind), sdk.WithTrendingFilter(query_params.Window))
 	}
 	ctx.JSON(http.StatusOK, res)
 }

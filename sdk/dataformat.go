@@ -7,40 +7,41 @@ const (
 	POST    = "post"
 	ARTICLE = "article"
 	COMMENT = "comment"
+	INVALID = "__INVALID__"
 )
 
 type Bean struct {
-	Url     string `json:"url,omitempty" bson:"url,omitempty"`         // this is unique across each item regardless of the source and will be used as ID
-	Updated int64  `json:"updated,omitempty" bson:"updated,omitempty"` // date of update of the post or comment. Empty for subreddits
-	Source  string `json:"source,omitempty" bson:"source,omitempty"`   // which social media source is this coming from
-	Title   string `json:"title,omitempty" bson:"title,omitempty"`     // represents text title of the item. Applies to subreddits and posts but not comments
-	Kind    string `json:"kind,omitempty" bson:"kind,omitempty"`
-	Text    string `json:"text,omitempty" bson:"text,omitempty"`
-	Author  string `json:"author,omitempty" bson:"author,omitempty"`   // author of posts or comments. Empty for subreddits
-	Created int64  `json:"created,omitempty" bson:"created,omitempty"` // date of creation of the post or comment. Empty for subreddits
+	Url        string          `json:"url,omitempty" bson:"url,omitempty"`         // this is unique across each item regardless of the source and will be used as ID
+	Updated    int64           `json:"updated,omitempty" bson:"updated,omitempty"` // date of update of the post or comment. Empty for subreddits
+	Source     string          `json:"source,omitempty" bson:"source,omitempty"`   // which social media source is this coming from
+	Title      string          `json:"title,omitempty" bson:"title,omitempty"`     // represents text title of the item. Applies to subreddits and posts but not comments
+	Kind       string          `json:"kind,omitempty" bson:"kind,omitempty"`
+	Text       string          `json:"text,omitempty" bson:"text,omitempty"`
+	Author     string          `json:"author,omitempty" bson:"author,omitempty"`   // author of posts or comments. Empty for subreddits
+	Created    int64           `json:"created,omitempty" bson:"created,omitempty"` // date of creation of the post or comment. Empty for subreddits
+	MediaNoise *BeanMediaNoise `json:"noise,omitempty" bson:"noise,omitempty"`
 
-	Keywords   []string  `json:"keywords,omitempty" bson:"keywords,omitempty"`     // This can come from input and/or computed from a small language model
-	Summary    string    `json:"summary,omitempty" bson:"summary,omitempty"`       // computed from a small language model
-	Sentiment  string    `json:"sentiment,omitempty" bson:"sentiment,omitempty"`   // computed from a small language model
-	Embeddings []float32 `json:"embeddings,omitempty" bson:"embeddings,omitempty"` // computed from a small language model
-
-	SimilarityScore float64 `json:"similarity_score,omitempty" bson:"similarity_score,omitempty"` // this is used for internal search
+	Keywords        []string  `json:"keywords,omitempty" bson:"keywords,omitempty"`                 // This can come from input and/or computed from a small language model
+	Summary         string    `json:"summary,omitempty" bson:"summary,omitempty"`                   // computed from a small language model
+	Sentiment       string    `json:"sentiment,omitempty" bson:"sentiment,omitempty"`               // computed from a small language model
+	Embeddings      []float32 `json:"embeddings,omitempty" bson:"embeddings,omitempty"`             // computed from a small language model
+	SimilarityScore float64   `json:"similarity_score,omitempty" bson:"similarity_score,omitempty"` // this is used for internal search
 }
 
 type BeanMediaNoise struct {
 	BeanUrl       string  `json:"url,omitempty" bson:"url,omitempty"` // the id is 1:1 mapping with Bean.Id
 	Updated       int64   `json:"updated,omitempty" bson:"updated,omitempty"`
-	Media         string  `json:"media,omitempty" bson:"media,omitempty"` // which social media source is this coming from
-	ContentId     string  `json:"cid,omitempty" bson:"cid,omitempty"`     // unique id across Source
+	Source        string  `json:"source,omitempty" bson:"source,omitempty"` // which social media source is this coming from
+	ContentId     string  `json:"cid,omitempty" bson:"cid,omitempty"`       // unique id across Source
 	Name          string  `json:"name,omitempty" bson:"name,omitempty"`
-	MediaChannel  string  `json:"channel,omitempty" bson:"channel,omitempty"` // fancy name of the channel represented by the channel itself or the channel where the post/comment is
-	MediaUrl      string  `json:"mediaurl,omitempty" bson:"mediaurl,omitempty"`
-	Author        string  `json:"author,omitempty" bson:"author,omitempty"`
+	Channel       string  `json:"channel,omitempty" bson:"channel,omitempty"` // fancy name of the channel represented by the channel itself or the channel where the post/comment is
+	ContainerUrl  string  `json:"container_url,omitempty" bson:"container_url,omitempty"`
 	Comments      int     `json:"comments,omitempty" bson:"comments,omitempty"`       // Number of comments to a post or a comment. Doesn't apply to subreddit
 	Subscribers   int     `json:"subscribers,omitempty" bson:"subscribers,omitempty"` // Number of subscribers to a channel (subreddit). Doesn't apply to posts or comments
 	ThumbsupCount int     `json:"likes,omitempty" bson:"likes,omitempty"`             // number of likes, claps, thumbs-up
 	ThumbsupRatio float64 `json:"likes_ratio,omitempty" bson:"likes_ratio,omitempty"` // Applies to subreddit posts and comments. Doesn't apply to subreddits
 	Score         int     `json:"score,omitempty" bson:"score,omitempty"`
+	Digest        string  `json:"digest,omitempty" bson:"digest,omitempty"`
 }
 
 type KeywordMap struct {

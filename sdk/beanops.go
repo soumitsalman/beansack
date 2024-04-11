@@ -14,6 +14,7 @@ import (
 const (
 	BEANSACK = "beansack"
 	BEANS    = "beans"
+	NOISES   = "noises"
 	KEYWORDS = "keywords"
 )
 
@@ -32,6 +33,7 @@ const (
 var (
 	wholebeans   *store.Store[Bean]
 	keywordstore *store.Store[KeywordMap]
+	noises       *store.Store[BeanMediaNoise]
 	nlpdriver    *ParrotBoxDriver
 	nlpqueue     chan []Bean
 )
@@ -63,6 +65,9 @@ func InitializeBeanSack(db_conn_str, parrotbox_url string) error {
 		store.WithSearchTopN[Bean](5),
 		store.WithDataIDAndEqualsFunction(getBeanId, Equals),
 	)
+	noises = store.New(
+		store.WithConnectionString[BeanMediaNoise](db_conn_str, BEANSACK, NOISES),
+	)
 	keywordstore = store.New(store.WithConnectionString[KeywordMap](db_conn_str, BEANSACK, KEYWORDS))
 	if wholebeans == nil || keywordstore == nil {
 		return BeanSackError("Initialization Failed. db_conn_str Not working: " + db_conn_str)
@@ -78,17 +83,33 @@ func AddBeans(beans []Bean) error {
 	// remove items without a text body
 	beans = datautils.Filter(beans, func(item *Bean) bool { return len(item.Text) > _MIN_TEXT_LENGTH })
 
-	// assign updated time
+	// extract out the beans medianoises
+	medianoises := datautils.FilterAndTransform(beans, func(item *Bean) (bool, BeanMediaNoise) {
+		if item.MediaNoise != nil {
+			item.MediaNoise.BeanUrl = item.Url
+			return true, *item.MediaNoise
+		} else {
+			return false, BeanMediaNoise{}
+		}
+	})
+
+	// assign updated time and truncate text
 	updated_time := time.Now().Unix()
 	datautils.ForEach(beans, func(item *Bean) {
 		item.Updated = updated_time
 		item.Text = datautils.TruncateTextWithEllipsis(item.Text, _MAX_TEXT_LENGTH)
+		item.MediaNoise = nil
+	})
+	datautils.ForEach(medianoises, func(item *BeanMediaNoise) {
+		item.Updated = updated_time
+		item.Digest = datautils.TruncateTextWithEllipsis(item.Digest, _MAX_TEXT_LENGTH)
 	})
 
 	beans, err := wholebeans.Add(beans)
 	if err != nil {
 		return err
 	}
+	noises.Add(medianoises)
 	// once the main docs are up, update them with sentiment, summary, keywords and embeddings
 	go queueForNlp(beans)
 	return nil
