@@ -14,47 +14,45 @@ const (
 )
 
 type ParrotBoxDriver struct {
-	url string
+	url        string
+	auth_token string
 }
 
-func NewParrotBoxDriver(url string) *ParrotBoxDriver {
-	return &ParrotBoxDriver{url}
+func NewParrotBoxDriver(url string, auth_token string) *ParrotBoxDriver {
+	return &ParrotBoxDriver{url, auth_token}
 }
-
-// func (driver *ParrotBoxDriver) CreateTextEmbeddings_v2(texts []string) []map[string]any {
-// 	return postRequest[map[string]any](driver.url, _EMBEDDINGS, texts)
-// }
 
 func (driver *ParrotBoxDriver) CreateTextEmbeddings(texts []string) ([]TextEmbeddings, error) {
-	return postRequest[TextEmbeddings](driver.url, _EMBEDDINGS, texts)
+	return postRequest[TextEmbeddings](driver.url, driver.auth_token, _EMBEDDINGS, texts)
 }
 
 func (driver *ParrotBoxDriver) CreateBeanEmbeddings(texts []string) ([]Bean, error) {
-	return postRequest[Bean](driver.url, _EMBEDDINGS, texts)
+	return postRequest[Bean](driver.url, driver.auth_token, _EMBEDDINGS, texts)
 }
 
 func (driver *ParrotBoxDriver) CreateTextAttributes(texts []string) ([]TextAttributes, error) {
-	return postRequest[TextAttributes](driver.url, _ATTRIBUTES, texts)
+	return postRequest[TextAttributes](driver.url, driver.auth_token, _ATTRIBUTES, texts)
 }
 
 func (driver *ParrotBoxDriver) CreateBeanAttributes(texts []string) ([]Bean, error) {
-	return postRequest[Bean](driver.url, _ATTRIBUTES, texts)
+	return postRequest[Bean](driver.url, driver.auth_token, _ATTRIBUTES, texts)
 }
 
 func (driver *ParrotBoxDriver) CreateBeanSummary(texts []string) ([]Bean, error) {
-	return postRequest[Bean](driver.url, _SUMMARY, texts)
+	return postRequest[Bean](driver.url, driver.auth_token, _SUMMARY, texts)
 }
 
 func (driver *ParrotBoxDriver) CreateBeanKeywords(texts []string) ([]Bean, error) {
-	return postRequest[Bean](driver.url, _KEYWORDS, texts)
+	return postRequest[Bean](driver.url, driver.auth_token, _KEYWORDS, texts)
 }
 
-func postRequest[T any](url, endpoint string, body any) ([]T, error) {
+func postRequest[T any](url, auth_token, endpoint string, body any) ([]T, error) {
 	var result []T
 	_, err := resty.New().
 		SetBaseURL(url).
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Accept", "application/json").
+		SetHeader("X-API-Key", auth_token).
 		R().
 		SetBody(body).
 		SetResult(&result).

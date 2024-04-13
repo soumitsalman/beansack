@@ -34,18 +34,18 @@ type queryParams struct {
 	Kind     string   `form:"kind"`
 }
 
-func (params *queryParams) assignDefaults() queryParams {
-	if params.Window == 0 {
-		params.Window = _SERVER_DEFAULT_WINDOW
-	}
-	if params.Kind == "" {
-		params.Kind = _SERVER_DEFAULT_KIND
-	}
-	if len(params.Keywords) == 0 {
-		params.Keywords = nil
-	}
-	return *params
-}
+// func (params *queryParams) assignDefaults() queryParams {
+// 	if params.Window == 0 {
+// 		params.Window = _SERVER_DEFAULT_WINDOW
+// 	}
+// 	if params.Kind == "" {
+// 		params.Kind = _SERVER_DEFAULT_KIND
+// 	}
+// 	if len(params.Keywords) == 0 {
+// 		params.Keywords = nil
+// 	}
+// 	return *params
+// }
 
 type bodyParams struct {
 	QueryTexts    []string `json:"query_texts,omitempty"`
@@ -63,39 +63,43 @@ func newBeansHandler(ctx *gin.Context) {
 }
 
 func getBeansHandler(ctx *gin.Context) {
-	var query_params queryParams
-	if ctx.BindQuery(&query_params) != nil {
-		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
+	filters := extractFilters(ctx)
+	if filters == nil {
 		return
 	}
 
-	query_params = query_params.assignDefaults()
-
-	var res []sdk.Bean
-	if len(query_params.Keywords) > 0 {
-		res = sdk.GetBeans(sdk.WithKindFilter(query_params.Kind), sdk.WithTimeWindowFilter(query_params.Window), sdk.WithKeywordsFilter(query_params.Keywords))
-	} else {
-		res = sdk.GetBeans(sdk.WithKindFilter(query_params.Kind), sdk.WithTrendingFilter(query_params.Window))
-	}
-	ctx.JSON(http.StatusOK, res)
+	res := sdk.GetBeans(filters...)
+	sendBeans(res, ctx)
 }
 
 func searchBeansHandler(ctx *gin.Context) {
-	var query_params queryParams
+	filters := extractFilters(ctx)
+	if filters == nil {
+		return
+	}
+
 	var body_params bodyParams
-	if ctx.BindQuery(&query_params) != nil || ctx.BindJSON(&body_params) != nil {
+	if ctx.BindJSON(&body_params) != nil {
 		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
 		return
 	}
 
 	var res []sdk.Bean
 	if len(body_params.QueryTexts) > 0 {
-		res = sdk.TextSearchBeans(body_params.QueryTexts, sdk.WithTimeWindowFilter(query_params.Window))
+		res = sdk.TextSearchBeans(body_params.QueryTexts, filters...)
 	} else if len(body_params.SearchContext) > 0 {
-		res = sdk.SimilaritySearchBeans(body_params.SearchContext, sdk.WithTimeWindowFilter(query_params.Window))
+		res = sdk.SimilaritySearchBeans(body_params.SearchContext, filters...)
 	}
 
-	ctx.JSON(http.StatusOK, res)
+	sendBeans(res, ctx)
+}
+
+func sendBeans(res []sdk.Bean, ctx *gin.Context) {
+	if len(res) > 0 {
+		ctx.JSON(http.StatusOK, res)
+	} else {
+		ctx.Status(http.StatusNoContent)
+	}
 }
 
 func getTrendingTopicsHandler(ctx *gin.Context) {
@@ -104,6 +108,15 @@ func getTrendingTopicsHandler(ctx *gin.Context) {
 		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
 	} else {
 		ctx.JSON(http.StatusOK, sdk.GetTrendingKeywords(query_params.Window))
+	}
+}
+
+func serverAuthHandler(ctx *gin.Context) {
+	// log.Println(ctx.GetHeader("X-API-Key"), getInternalAuthToken())
+	if ctx.GetHeader("X-API-Key") == getInternalAuthToken() {
+		ctx.Next()
+	} else {
+		ctx.AbortWithStatus(http.StatusUnauthorized)
 	}
 }
 
@@ -118,30 +131,52 @@ func initializeRateLimiter() gin.HandlerFunc {
 	}
 }
 
+func extractFilters(ctx *gin.Context) []sdk.Option {
+	var query_params queryParams
+	if ctx.BindQuery(&query_params) != nil {
+		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
+		return nil
+	}
+
+	filters := make([]sdk.Option, 0, 3)
+	if query_params.Kind != "" {
+		filters = append(filters, sdk.WithKindFilter(query_params.Kind))
+	}
+	if query_params.Window > 0 {
+		filters = append(filters, sdk.WithTimeWindowFilter(query_params.Window))
+	}
+	if len(query_params.Keywords) > 0 {
+		filters = append(filters, sdk.WithKeywordsFilter(query_params.Keywords))
+	}
+	return filters
+}
+
 func newServer() *gin.Engine {
 	router := gin.Default()
-	group := router.Group("/")
-	group.Use(initializeRateLimiter())
 
+	// SERVICE TO SERVICE AUTH
+	auth_group := router.Group("/")
+	auth_group.Use(initializeRateLimiter(), serverAuthHandler)
 	// PUT /beans
-	// TODO: put this under auth
-	group.PUT("/beans", newBeansHandler)
+	auth_group.PUT("/beans", newBeansHandler)
 
+	// NO NEED FOR AUTH: this is open to public
+	open_group := router.Group("/")
+	open_group.Use(initializeRateLimiter())
 	// GET /beans/trending?window=1&keyword=amazon&keyword=apple
-	group.GET("/beans/trending", getBeansHandler)
-
+	open_group.GET("/beans/trending", getBeansHandler)
 	// GET /beans/search?window=1
 	// query_texts: []string
 	// similarity_text: string
-	group.GET("/beans/search", searchBeansHandler)
-
+	open_group.GET("/beans/search", searchBeansHandler)
 	// GET /topics/trending?window=1
-	group.GET("/topics/trending", getTrendingTopicsHandler)
+	open_group.GET("/topics/trending", getTrendingTopicsHandler)
+
 	return router
 }
 
 func main() {
-	if err := sdk.InitializeBeanSack(getDBConnectionString(), getParrotBoxUrl()); err != nil {
+	if err := sdk.InitializeBeanSack(getDBConnectionString(), getParrotBoxUrl(), getInternalAuthToken()); err != nil {
 		log.Fatalln("initialization not working", err)
 	}
 	newServer().Run()

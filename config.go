@@ -10,3 +10,7 @@ func getDBConnectionString() string {
 func getParrotBoxUrl() string {
 	return os.Getenv("PARROTBOX_URL")
 }
+
+func getInternalAuthToken() string {
+	return os.Getenv("INTERNAL_AUTH_TOKEN")
+}

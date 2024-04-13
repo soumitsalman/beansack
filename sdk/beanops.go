@@ -58,7 +58,7 @@ func (err BeanSackError) Error() string {
 	return string(err)
 }
 
-func InitializeBeanSack(db_conn_str, parrotbox_url string) error {
+func InitializeBeanSack(db_conn_str, parrotbox_url, parrotbox_auth_token string) error {
 	wholebeans = store.New(
 		store.WithConnectionString[Bean](db_conn_str, BEANSACK, BEANS),
 		store.WithMinSearchScore[Bean](0.4), // TODO: change this to 0.8 in future
@@ -72,7 +72,7 @@ func InitializeBeanSack(db_conn_str, parrotbox_url string) error {
 	if wholebeans == nil || keywordstore == nil {
 		return BeanSackError("Initialization Failed. db_conn_str Not working: " + db_conn_str)
 	}
-	nlpdriver = NewParrotBoxDriver(parrotbox_url)
+	nlpdriver = NewParrotBoxDriver(parrotbox_url, parrotbox_auth_token)
 	nlpqueue = make(chan []Bean, 100)
 	go startNlpQueue()
 
@@ -81,7 +81,7 @@ func InitializeBeanSack(db_conn_str, parrotbox_url string) error {
 
 func AddBeans(beans []Bean) error {
 	// remove items without a text body
-	beans = datautils.Filter(beans, func(item *Bean) bool { return len(item.Text) > _MIN_TEXT_LENGTH })
+	beans = datautils.Filter(beans, func(item *Bean) bool { return item.Kind != INVALID && len(item.Text) > _MIN_TEXT_LENGTH })
 
 	// extract out the beans medianoises
 	medianoises := datautils.FilterAndTransform(beans, func(item *Bean) (bool, BeanMediaNoise) {
@@ -111,6 +111,7 @@ func AddBeans(beans []Bean) error {
 	}
 	noises.Add(medianoises)
 	// once the main docs are up, update them with sentiment, summary, keywords and embeddings
+	beans = datautils.Filter(beans, func(item *Bean) bool { return item.Kind != CHANNEL })
 	go queueForNlp(beans)
 	return nil
 }
