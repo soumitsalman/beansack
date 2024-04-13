@@ -27,8 +27,8 @@ func WithTimeWindowFilter(time_window int) Option {
 	}
 }
 
-func WithKindFilter(kind string) Option {
+func WithKindFilter(kinds []string) Option {
 	return func(filter store.JSON) {
-		filter["kind"] = kind
+		filter["kind"] = store.JSON{"$in": kinds}
 	}
 }

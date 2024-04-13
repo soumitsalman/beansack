@@ -81,7 +81,7 @@ func InitializeBeanSack(db_conn_str, parrotbox_url, parrotbox_auth_token string)
 
 func AddBeans(beans []Bean) error {
 	// remove items without a text body
-	beans = datautils.Filter(beans, func(item *Bean) bool { return item.Kind != INVALID && len(item.Text) > _MIN_TEXT_LENGTH })
+	beans = datautils.Filter(beans, func(item *Bean) bool { return len(item.Text) > _MIN_TEXT_LENGTH })
 
 	// extract out the beans medianoises
 	medianoises := datautils.FilterAndTransform(beans, func(item *Bean) (bool, BeanMediaNoise) {
@@ -130,6 +130,17 @@ func SimilaritySearchBeans(search_context string, filter_options ...Option) []Be
 	search_vector := runRemoteNlpFunction(nlpdriver.CreateTextEmbeddings, []string{search_context})[0]
 	filter := makeFilter(filter_options...)
 	return wholebeans.VectorSearch(search_vector.Embeddings, filter, bean_fields)
+}
+
+func todo_GetMediaNoise(beans []Bean) []Bean {
+	// urls := datautils.Transform(beans, func(item *Bean) string { return item.Url })
+	// noise_items := noises.Get(
+	// 	store.JSON{
+	// 		"url": store.JSON{"$in": urls},
+	// 	},
+	// 	store.JSON{"_id": 0},
+	// )
+	return beans
 }
 
 // TODO: remove this later

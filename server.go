@@ -31,7 +31,7 @@ const (
 type queryParams struct {
 	Window   int      `form:"window"`
 	Keywords []string `form:"keyword"`
-	Kind     string   `form:"kind"`
+	Kinds    []string `form:"kind"`
 }
 
 // func (params *queryParams) assignDefaults() queryParams {
@@ -139,8 +139,8 @@ func extractFilters(ctx *gin.Context) []sdk.Option {
 	}
 
 	filters := make([]sdk.Option, 0, 3)
-	if query_params.Kind != "" {
-		filters = append(filters, sdk.WithKindFilter(query_params.Kind))
+	if len(query_params.Kinds) > 0 {
+		filters = append(filters, sdk.WithKindFilter(query_params.Kinds))
 	}
 	if query_params.Window > 0 {
 		filters = append(filters, sdk.WithTimeWindowFilter(query_params.Window))
