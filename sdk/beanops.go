@@ -87,6 +87,7 @@ func InitializeBeanSack(db_conn_str, parrotbox_url, parrotbox_auth_token string)
 func AddBeans(beans []Bean) error {
 	// remove items without a text body
 	beans = datautils.Filter(beans, func(item *Bean) bool { return len(item.Text) > _MIN_TEXT_LENGTH })
+	beans = datautils.Filter(beans, func(item *Bean) bool { return len(item.Text) > _MIN_TEXT_LENGTH })
 
 	// extract out the beans medianoises
 	medianoises := datautils.FilterAndTransform(beans, func(item *Bean) (bool, BeanMediaNoise) {
