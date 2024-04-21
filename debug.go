@@ -20,6 +20,7 @@ func loadFromFile(filepath string) []sdk.Bean {
 }
 
 func debug_main() {
+	sdk.RectifyBeans()
 	// path := "news-dump/2024-03-21-12-52-24.json"
 	// beans := loadFromFile(path)
 	// texts := datautils.Transform(beans, func(bean *sdk.Bean) string { return bean.Text })

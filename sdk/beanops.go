@@ -34,22 +34,26 @@ var (
 	wholebeans   *store.Store[Bean]
 	keywordstore *store.Store[KeywordMap]
 	noises       *store.Store[BeanMediaNoise]
-	nlpdriver    *ParrotBoxDriver
+	remote_nlp   *ParrotBoxDriver
+	local_nlp    *InferenceDriver
 	nlpqueue     chan []Bean
 )
 
 var (
 	bean_fields = store.JSON{
-		"url":     1,
-		"updated": 1,
-		"source":  1,
-		"title":   1,
-		"kind":    1,
-		"author":  1,
-		"created": 1,
-		"summary": 1,
-		"keyword": 1,
+		"url":       1,
+		"updated":   1,
+		"source":    1,
+		"title":     1,
+		"kind":      1,
+		"author":    1,
+		"created":   1,
+		"summary":   1,
+		"keywords":  1,
+		"topic":     1,
+		"sentiment": 1,
 	}
+	generated_fields = []string{"category_embeddings", "search_embeddings" /*"topic", "keywords", "summary", "sentiment" */}
 )
 
 type BeanSackError string
@@ -61,7 +65,7 @@ func (err BeanSackError) Error() string {
 func InitializeBeanSack(db_conn_str, parrotbox_url, parrotbox_auth_token string) error {
 	wholebeans = store.New(
 		store.WithConnectionString[Bean](db_conn_str, BEANSACK, BEANS),
-		store.WithMinSearchScore[Bean](0.4), // TODO: change this to 0.8 in future
+		store.WithMinSearchScore[Bean](0.55), // TODO: change this to 0.8 in future
 		store.WithSearchTopN[Bean](5),
 		store.WithDataIDAndEqualsFunction(getBeanId, Equals),
 	)
@@ -72,16 +76,17 @@ func InitializeBeanSack(db_conn_str, parrotbox_url, parrotbox_auth_token string)
 	if wholebeans == nil || keywordstore == nil {
 		return BeanSackError("Initialization Failed. db_conn_str Not working: " + db_conn_str)
 	}
-	nlpdriver = NewParrotBoxDriver(parrotbox_url, parrotbox_auth_token)
+	remote_nlp = NewParrotBoxDriver(parrotbox_url, parrotbox_auth_token)
+	local_nlp = NewLocalInferenceDriver()
 	nlpqueue = make(chan []Bean, 100)
-	go startNlpQueue()
+	go processNlpQueue()
 
 	return nil
 }
 
 func AddBeans(beans []Bean) error {
 	// remove items without a text body
-	beans = datautils.Filter(beans, func(item *Bean) bool { return item.Kind != INVALID && len(item.Text) > _MIN_TEXT_LENGTH })
+	beans = datautils.Filter(beans, func(item *Bean) bool { return len(item.Text) > _MIN_TEXT_LENGTH })
 
 	// extract out the beans medianoises
 	medianoises := datautils.FilterAndTransform(beans, func(item *Bean) (bool, BeanMediaNoise) {
@@ -125,27 +130,92 @@ func TextSearchBeans(query_texts []string, filter_options ...Option) []Bean {
 	return wholebeans.TextSearch(query_texts, filter, bean_fields)
 }
 
-func SimilaritySearchBeans(search_context string, filter_options ...Option) []Bean {
-	log.Println("[dbops] Generating embeddings for:", search_context)
-	search_vector := runRemoteNlpFunction(nlpdriver.CreateTextEmbeddings, []string{search_context})[0]
+// func SimilaritySearchBeans(search_context string, filter_options ...Option) []Bean {
+// 	log.Println("[dbops] Generating embeddings for:", search_context)
+// 	search_vector := runRemoteNlpFunction(nlpdriver.CreateTextEmbeddings, []string{search_context})[0]
+// 	filter := makeFilter(filter_options...)
+// 	return wholebeans.VectorSearch(search_vector.Embeddings, filter, bean_fields)
+// }
+
+func CategorySearchBeans(categories []string, filter_options ...Option) []Bean {
 	filter := makeFilter(filter_options...)
-	return wholebeans.VectorSearch(search_vector.Embeddings, filter, bean_fields)
+
+	log.Println("[dbops] Generating embeddings for:", categories)
+	search_vectors := createBatchEmbeddings(categories, CATEGORIZATION)
+	result := make([]Bean, 0, len(categories)*5)
+	datautils.ForEach(search_vectors, func(vec *[]float32) {
+		result = append(result, wholebeans.VectorSearch(*vec, "category_embeddings", filter, bean_fields)...)
+	})
+	return result
 }
 
-// TODO: remove this later
-func debug_SearchBeans_V2(query_texts []string, query_embeddings [][]float32, filter store.JSON) []Bean {
-	// if query embeddings is nil or empty then make it up from query_text
-	if len(query_embeddings) == 0 {
-		log.Println("[dbops] Generating embeddings for:", query_texts)
-		query_embeddings = datautils.Transform(runRemoteNlpFunction(nlpdriver.CreateTextEmbeddings, query_texts), func(item *TextEmbeddings) []float32 { return item.Embeddings })
-	}
-	// filter := makeFilter(filter_options...)
-	beans := make([]Bean, 0, 3*len(query_embeddings)) // approximate length
-	for _, emb := range query_embeddings {
-		beans = append(beans, wholebeans.VectorSearch(emb, filter, bean_fields)...)
-	}
+func QuerySearchBeans(search_query string, filter_options ...Option) []Bean {
+	filter := makeFilter(filter_options...)
 
+	log.Println("[dbops] Generating embeddings for:", search_query)
+	search_vector := createEmbeddings(search_query, SEARCH_QUERY)
+	return wholebeans.VectorSearch(search_vector, "search_embeddings", filter, bean_fields)
+}
+
+func todo_GetMediaNoise(beans []Bean) []Bean {
+	// urls := datautils.Transform(beans, func(item *Bean) string { return item.Url })
+	// noise_items := noises.Get(
+	// 	store.JSON{
+	// 		"url": store.JSON{"$in": urls},
+	// 	},
+	// 	store.JSON{"_id": 0},
+	// )
 	return beans
+}
+
+// this is for any recurring service
+// this is currently not being run as a recurring service
+func RectifyBeans() {
+	// delete old stuff
+	wholebeans.Delete(
+		store.JSON{
+			"updated": store.JSON{"$lte": timeValue(checkAndFixTimeWindow(15))},
+		},
+	)
+	keywordstore.Delete(
+		store.JSON{
+			"updated": store.JSON{"$lte": timeValue(checkAndFixTimeWindow(15))},
+		},
+	)
+
+	for _, field_name := range generated_fields {
+		beans := wholebeans.Get(
+			store.JSON{
+				field_name: store.JSON{"$exists": false},
+				"updated":  store.JSON{"$gte": timeValue(checkAndFixTimeWindow(2))},
+			},
+			store.JSON{
+				"url":  1,
+				"text": 1,
+			},
+		)
+		log.Printf("[dbops] Rectifying %s for %d items\n", field_name, len(beans))
+
+		// process batch
+		filters := getBeanIdFilters(beans)
+		texts := getTextFields(beans)
+		var updates []Bean
+
+		// store embeddings
+		// embs := runRemoteNlpFunction(nlpdriver.CreateBeanEmbeddings, texts)
+		switch field_name {
+		case "category_embeddings":
+			updates = datautils.Transform(texts, func(item *string) Bean {
+				return Bean{CategoryEmbeddings: createEmbeddings(*item, CATEGORIZATION)}
+			})
+
+		case "search_embeddings":
+			updates = datautils.Transform(texts, func(item *string) Bean {
+				return Bean{SearchEmbeddings: createEmbeddings(*item, SEARCH_DOCUMENT)}
+			})
+		}
+		wholebeans.Update(updates, filters)
+	}
 }
 
 // last_n_days can be between 1 - 30
@@ -190,7 +260,7 @@ func queueForNlp(beans []Bean) {
 	}
 }
 
-func startNlpQueue() {
+func processNlpQueue() {
 	for {
 		beans := <-nlpqueue
 
@@ -198,19 +268,28 @@ func startNlpQueue() {
 		// process batch
 		filters := getBeanIdFilters(beans)
 		texts := getTextFields(beans)
+		var updates []Bean
 
-		// store embeddings
-		embs := runRemoteNlpFunction(nlpdriver.CreateBeanEmbeddings, texts)
-		wholebeans.Update(embs, filters)
+		// store embeddings for Category
+		updates = datautils.Transform(texts, func(item *string) Bean {
+			return Bean{CategoryEmbeddings: createEmbeddings(*item, CATEGORIZATION)}
+		})
+		wholebeans.Update(updates, filters)
+
+		// store embeddings for CHAT search
+		updates = datautils.Transform(texts, func(item *string) Bean {
+			return Bean{SearchEmbeddings: createEmbeddings(*item, SEARCH_DOCUMENT)}
+		})
+		wholebeans.Update(updates, filters)
 
 		// store summary
-		summaries := runRemoteNlpFunction(nlpdriver.CreateBeanSummary, texts)
+		summaries := runRemoteNlpFunction(remote_nlp.CreateBeanSummary, texts)
 		wholebeans.Update(summaries, filters)
 
 		// store the keywords in combination with existing keywords
 		// both in keywords collection
 		// and the beans collection for easy retrieval
-		keywords_list := runRemoteNlpFunction(nlpdriver.CreateBeanKeywords, texts)
+		keywords_list := runRemoteNlpFunction(remote_nlp.CreateBeanKeywords, texts)
 		for i := range beans {
 			keywords_list[i].Keywords = append(beans[i].Keywords, keywords_list[i].Keywords...)
 			keywordstore.Add(datautils.Transform(keywords_list[i].Keywords, func(item *string) KeywordMap {
@@ -244,6 +323,37 @@ func runRemoteNlpFunction[T any](nlp_func func(texts []string) ([]T, error), tex
 		return nil
 	}, retry.Delay(_RETRY_DELAY))
 
+	return res
+}
+
+func createEmbeddings(text string, task_type string) []float32 {
+	return retryWhenFails[string, []float32](
+		func(input string) ([]float32, error) {
+			return local_nlp.CreateTextEmbeddings(text, task_type)
+		},
+		text)
+}
+
+func createBatchEmbeddings(texts []string, task_type string) [][]float32 {
+	return retryWhenFails(
+		func(input []string) ([][]float32, error) {
+			return local_nlp.CreateBatchTextEmbeddings(texts, task_type)
+		},
+		texts)
+}
+
+func retryWhenFails[T_input, T_output any](original_func func(input T_input) (T_output, error), input T_input) T_output {
+	var res T_output
+	var err error
+	// retry for each batch
+	retry.Do(func() error {
+		res, err = original_func(input)
+		// something went wrong with the function so try again
+		if err != nil {
+			return err
+		}
+		return nil
+	}, retry.Delay(_RETRY_DELAY))
 	return res
 }
 

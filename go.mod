@@ -4,6 +4,7 @@ go 1.22.1
 
 require (
 	github.com/avast/retry-go v3.0.0+incompatible
+	github.com/joho/godotenv v1.5.1
 	github.com/soumitsalman/data-utils v0.0.0-20240411181743-1067a6fce2ca
 	github.com/tmc/langchaingo v0.1.8
 	go.mongodb.org/mongo-driver v1.14.0

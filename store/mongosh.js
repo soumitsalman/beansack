@@ -29,7 +29,52 @@ db.runCommand(
       }
     ]
   }
-)
+);
+
+db.runCommand(
+  {
+    "createIndexes": "beans",
+    "indexes": [
+      {
+        "name": "beans_category_search",
+        "key": 
+        {
+          "category_embeddings": "cosmosSearch"
+        },
+        "cosmosSearchOptions": 
+        {
+          "kind": "vector-ivf",
+          "numLists": 10,
+          "similarity": "COS",
+          "dimensions": 768
+        }
+      }
+    ]
+  }
+);
+
+db.runCommand(
+  {
+    "createIndexes": "beans",
+    "indexes": [
+      {
+        "name": "beans_query_search",
+        "key": 
+        {
+          "search_embeddings": "cosmosSearch"
+        },
+        "cosmosSearchOptions": 
+        {
+          "kind": "vector-ivf",
+          "numLists": 10,
+          "similarity": "COS",
+          "dimensions": 768
+        }
+      }
+    ]
+  }
+);
+
 
 // scalar index - these need to exist if i want to use these as filters in vector search
 db.getCollection("beans").createIndex(

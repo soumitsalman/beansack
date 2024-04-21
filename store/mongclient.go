@@ -143,40 +143,40 @@ func (store *Store[T]) TextSearch(query_texts []string, filter JSON, fields JSON
 		{
 			"$project": datautils.AppendMaps(
 				JSON{
-					"_id":              0,
-					"similarity_score": JSON{"$meta": "textScore"},
+					"_id":          0,
+					"search_score": JSON{"$meta": "textScore"},
 				},
 				fields),
 		},
 		{
 			"$match": JSON{
-				"similarity_score": JSON{"$gt": 1},
+				"search_score": JSON{"$gt": 1},
 			},
 		},
 		{
-			"$sort": JSON{"similarity_score": -1},
+			"$sort": JSON{"search_score": -1},
 		},
 	}
 	return store.Aggregate(search_pipeline)
 }
 
 // query documents
-func (store *Store[T]) VectorSearch(query_embeddings []float32, filter JSON, fields JSON) []T {
+func (store *Store[T]) VectorSearch(query_embeddings []float32, vec_path string, filter JSON, fields JSON) []T {
 	cosmos_search := JSON{
 		"vector": query_embeddings,
-		"path":   "embeddings", // this hardcoded for ease. All embeddings will be in a field called embeddings
+		"path":   vec_path, // this hardcoded for ease. All embeddings will be in a field called embeddings
 		"k":      store.search_top_n,
 	}
 	if len(filter) > 0 {
 		cosmos_search["filter"] = filter
 	}
 	// js, _ := json.MarshalIndent(cosmos_search, "", "  ")
-	// log.Println(string(js))
+	// log.Println(datautils.ToJsonString(cosmos_search))
 
 	fields = datautils.AppendMaps(
 		JSON{
-			"similarity_score": JSON{"$meta": "searchScore"},
-			"_id":              0,
+			"search_score": JSON{"$meta": "searchScore"},
+			"_id":          0,
 		},
 		fields,
 	)
@@ -192,11 +192,20 @@ func (store *Store[T]) VectorSearch(query_embeddings []float32, filter JSON, fie
 		},
 		{
 			"$match": JSON{
-				"similarity_score": JSON{"$gte": store.search_min_score},
+				"search_score": JSON{"$gte": store.search_min_score},
 			},
 		},
 	}
 	return store.Aggregate(search_pipeline)
+}
+
+func (store *Store[T]) Delete(filter JSON) {
+	res, err := store.collection.DeleteMany(ctx.Background(), filter)
+	if err != nil {
+		log.Printf("[%s]: Deletion failed. %v\n", store.name, err)
+	} else {
+		log.Printf("[%s]: %d items deleted.\n", store.name, res.DeletedCount)
+	}
 }
 
 func (store *Store[T]) getIDs(items []T) []JSON {
@@ -222,7 +231,7 @@ func (store *Store[T]) extractFromCursor(cursor *mongo.Cursor, err error) []T {
 func createMongoClient(connection_string string) *mongo.Client {
 	client, err := mongo.Connect(ctx.Background(), options.Client().ApplyURI(connection_string))
 	if err != nil {
-		log.Println(err)
+		log.Println("[mongoclient]", err)
 		return nil
 	}
 	return client

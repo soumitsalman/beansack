@@ -1,5 +1,6 @@
 .env
 .gitignore
 *.js
-*.json
+/news-dump
+
 

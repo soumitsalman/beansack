@@ -1,0 +1,24 @@
+version: "3.8"
+
+# this is just for local running
+
+services:
+  app-server:
+    build: .
+    environment:
+      - PARROTBOX_URL=https://parrotboxservice.orangeflower-f8e1f6b0.eastus.azurecontainerapps.io
+      - EMBED_GENERATION_URL=http://embedding-server:10000/embed
+    env_file:
+      - ./.env
+    ports:
+      - "8080:8080"      
+  embedding-server:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.2    
+    environment:
+      - MODEL_ID=nomic-ai/nomic-embed-text-v1
+      - PORT=10000
+      - HUGGINGFACE_HUB_CACHE=/model
+    ports:
+      - "10000:10000"
+    volumes:
+      - ./modeldata:/model

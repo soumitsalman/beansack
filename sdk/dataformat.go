@@ -21,11 +21,13 @@ type Bean struct {
 	Created    int64           `json:"created,omitempty" bson:"created,omitempty"` // date of creation of the post or comment. Empty for subreddits
 	MediaNoise *BeanMediaNoise `json:"noise,omitempty" bson:"noise,omitempty"`
 
-	Keywords        []string  `json:"keywords,omitempty" bson:"keywords,omitempty"`                 // This can come from input and/or computed from a small language model
-	Summary         string    `json:"summary,omitempty" bson:"summary,omitempty"`                   // computed from a small language model
-	Sentiment       string    `json:"sentiment,omitempty" bson:"sentiment,omitempty"`               // computed from a small language model
-	Embeddings      []float32 `json:"embeddings,omitempty" bson:"embeddings,omitempty"`             // computed from a small language model
-	SimilarityScore float64   `json:"similarity_score,omitempty" bson:"similarity_score,omitempty"` // this is used for internal search
+	Keywords           []string  `json:"keywords,omitempty" bson:"keywords,omitempty"`                       // This can come from input and/or computed from a small language model
+	Summary            string    `json:"summary,omitempty" bson:"summary,omitempty"`                         // computed from a small language model
+	Sentiment          string    `json:"sentiment,omitempty" bson:"sentiment,omitempty"`                     // computed from a small language model
+	Embeddings         []float32 `json:"embeddings,omitempty" bson:"embeddings,omitempty"`                   // computed from a small language model
+	SearchEmbeddings   []float32 `json:"search_embeddings,omitempty" bson:"search_embeddings,omitempty"`     // computed from a small language model
+	CategoryEmbeddings []float32 `json:"category_embeddings,omitempty" bson:"category_embeddings,omitempty"` // computed from a small language model
+	SearchScore        float64   `json:"search_score,omitempty" bson:"search_score,omitempty"`               // this is used for internal search
 }
 
 type BeanMediaNoise struct {

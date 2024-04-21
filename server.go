@@ -7,6 +7,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/soumitsalman/beansack/sdk"
 	"golang.org/x/time/rate"
+
+	"github.com/joho/godotenv"
 )
 
 // PUT /beans
@@ -31,7 +33,7 @@ const (
 type queryParams struct {
 	Window   int      `form:"window"`
 	Keywords []string `form:"keyword"`
-	Kind     string   `form:"kind"`
+	Kinds    []string `form:"kind"`
 }
 
 // func (params *queryParams) assignDefaults() queryParams {
@@ -48,8 +50,8 @@ type queryParams struct {
 // }
 
 type bodyParams struct {
-	QueryTexts    []string `json:"query_texts,omitempty"`
-	SearchContext string   `json:"search_context,omitempty"`
+	Categories []string `json:"categories,omitempty"`
+	SearchText string   `json:"search_text,omitempty"`
 }
 
 func newBeansHandler(ctx *gin.Context) {
@@ -85,10 +87,10 @@ func searchBeansHandler(ctx *gin.Context) {
 	}
 
 	var res []sdk.Bean
-	if len(body_params.QueryTexts) > 0 {
-		res = sdk.TextSearchBeans(body_params.QueryTexts, filters...)
-	} else if len(body_params.SearchContext) > 0 {
-		res = sdk.SimilaritySearchBeans(body_params.SearchContext, filters...)
+	if len(body_params.Categories) > 0 {
+		res = sdk.CategorySearchBeans(body_params.Categories, filters...)
+	} else if len(body_params.SearchText) > 0 {
+		res = sdk.QuerySearchBeans(body_params.SearchText, filters...)
 	}
 
 	sendBeans(res, ctx)
@@ -139,8 +141,8 @@ func extractFilters(ctx *gin.Context) []sdk.Option {
 	}
 
 	filters := make([]sdk.Option, 0, 3)
-	if query_params.Kind != "" {
-		filters = append(filters, sdk.WithKindFilter(query_params.Kind))
+	if len(query_params.Kinds) > 0 {
+		filters = append(filters, sdk.WithKindFilter(query_params.Kinds))
 	}
 	if query_params.Window > 0 {
 		filters = append(filters, sdk.WithTimeWindowFilter(query_params.Window))
@@ -176,9 +178,12 @@ func newServer() *gin.Engine {
 }
 
 func main() {
+	// debug line
+	godotenv.Load()
 	if err := sdk.InitializeBeanSack(getDBConnectionString(), getParrotBoxUrl(), getInternalAuthToken()); err != nil {
 		log.Fatalln("initialization not working", err)
 	}
 	newServer().Run()
+	// debug line
 	// debug_main()
 }
