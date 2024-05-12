@@ -30,38 +30,59 @@ type Store[T any] struct {
 
 type Option[T any] func(store *Store[T])
 
-func New[T any](opts ...Option[T]) *Store[T] {
-	store := &Store[T]{
-		search_min_score: _DEFAULT_SEARCH_MIN_SCORE,
-		search_top_n:     _DEFAULT_SEARCH_TOP_N,
+func New[T any](connection_string, database, collection string, opts ...Option[T]) *Store[T] {
+	store := newStore[T](connection_string, database, collection)
+	if store == nil {
+		return nil
 	}
+	// assign defaults
+	store.search_min_score = _DEFAULT_SEARCH_MIN_SCORE
+	store.search_top_n = _DEFAULT_SEARCH_TOP_N
+
+	// apply options
 	for _, opt := range opts {
 		opt(store)
-	}
-	if store.collection == nil {
-		return nil
 	}
 	return store
 }
 
-func WithConnectionString[T any](connection_string, database, collection string) Option[T] {
-	return func(store *Store[T]) {
-		client := createMongoClient(connection_string)
-		if client == nil {
-			return
-		}
-		db := client.Database(database)
-		if db == nil {
-			return
-		}
-		col_client := db.Collection(collection)
-		if col_client == nil {
-			return
-		}
-		store.name = fmt.Sprintf("%s/%s", database, collection)
-		store.collection = col_client
+func newStore[T any](connection_string, database, collection string) *Store[T] {
+	client := createMongoClient(connection_string)
+	if client == nil {
+		return nil
+	}
+	db := client.Database(database)
+	if db == nil {
+		return nil
+	}
+	col_client := db.Collection(collection)
+	if col_client == nil {
+		return nil
+	}
+	return &Store[T]{
+		name:       fmt.Sprintf("%s/%s", database, collection),
+		collection: col_client,
 	}
 }
+
+// func WithConnectionString[T any](connection_string, database, collection string) Option[T] {
+// 	return func(store *Store[T]) {
+// 		client := createMongoClient(connection_string)
+// 		if client == nil {
+// 			return
+// 		}
+// 		db := client.Database(database)
+// 		if db == nil {
+// 			return
+// 		}
+// 		col_client := db.Collection(collection)
+// 		if col_client == nil {
+// 			return
+// 		}
+// 		store.name = fmt.Sprintf("%s/%s", database, collection)
+// 		store.collection = col_client
+// 	}
+// }
 
 func WithMinSearchScore[T any](score float64) Option[T] {
 	return func(store *Store[T]) {
@@ -107,7 +128,8 @@ func (store *Store[T]) Add(docs []T) ([]T, error) {
 	return docs, nil
 }
 
-func (store *Store[T]) Update(docs []T, filters []JSON) {
+// docs is an array of any struct that is bson serializable
+func (store *Store[T]) Update(docs []any, filters []JSON) {
 	// create batch
 	updates := make([]mongo.WriteModel, len(docs))
 	for i := range docs {
@@ -124,6 +146,9 @@ func (store *Store[T]) Update(docs []T, filters []JSON) {
 }
 
 func (store *Store[T]) Get(filter JSON, fields JSON) []T {
+	// _filter := JSON{"kind": "article"}
+	// _fields := bson.D{{"url", 1}, {"text", 1}}
+	// log.Println(datautils.ToJsonString(_filter), datautils.ToJsonString(_fields))
 	return store.extractFromCursor(store.collection.Find(ctx.Background(), filter, options.Find().SetProjection(fields)))
 }
 
@@ -221,11 +246,14 @@ func (store *Store[T]) extractFromCursor(cursor *mongo.Cursor, err error) []T {
 		return nil
 	}
 	defer cursor.Close(background)
+
+	// unmarshall
 	var contents []T
-	if err = cursor.All(background, &contents); err == nil {
-		return contents
+	if err = cursor.All(background, &contents); err != nil {
+		log.Println(err)
+		return nil
 	}
-	return nil
+	return contents
 }
 
 func createMongoClient(connection_string string) *mongo.Client {

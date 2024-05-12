@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 
+	"github.com/joho/godotenv"
 	"github.com/soumitsalman/beansack/sdk"
 )
 
@@ -20,6 +22,17 @@ func loadFromFile(filepath string) []sdk.Bean {
 }
 
 func debug_main() {
+	// load the env vars from local file
+	godotenv.Load()
+
+	// initialize the services
+	if err := sdk.InitializeBeanSack(getDBConnectionString(), getParrotBoxUrl(), getLLMServiceAPIKey()); err != nil {
+		log.Fatalln("initialization not working", err)
+	}
+
+	fmt.Println(len(sdk.GetBeans(sdk.WithKindFilter([]string{"article"}))))
+
+	// run rectify
 	sdk.RectifyBeans()
 	// path := "news-dump/2024-03-21-12-52-24.json"
 	// beans := loadFromFile(path)

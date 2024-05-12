@@ -1,4 +1,4 @@
-package sdk
+package nlp
 
 import (
 
@@ -76,12 +76,6 @@ func (driver *HuggingfaceDriver) CreateTextEmbeddings(texts []string) []TextEmbe
 		return nil
 	}, retry.Delay(_RETRY_DELAY))
 	return res
-}
-
-func (driver *HuggingfaceDriver) CreateTextAttributes(text []string) []TextAttributes {
-	// log.Println(driver.keywords_model.Call(ctx.Background(), "summarize: \n"+text[0]))
-	// NOT IMPLEMENTED
-	return nil
 }
 
 func getHuggingfaceToken() string {

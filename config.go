@@ -14,3 +14,7 @@ func getParrotBoxUrl() string {
 func getInternalAuthToken() string {
 	return os.Getenv("INTERNAL_AUTH_TOKEN")
 }
+
+func getLLMServiceAPIKey() string {
+	return os.Getenv("LLMSERVICE_API_KEY")
+}

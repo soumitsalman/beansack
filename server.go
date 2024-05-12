@@ -7,8 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/soumitsalman/beansack/sdk"
 	"golang.org/x/time/rate"
-
-	"github.com/joho/godotenv"
 )
 
 // PUT /beans
@@ -178,9 +176,7 @@ func newServer() *gin.Engine {
 }
 
 func main() {
-	// debug line
-	godotenv.Load()
-	if err := sdk.InitializeBeanSack(getDBConnectionString(), getParrotBoxUrl(), getInternalAuthToken()); err != nil {
+	if err := sdk.InitializeBeanSack(getDBConnectionString(), getParrotBoxUrl(), getLLMServiceAPIKey()); err != nil {
 		log.Fatalln("initialization not working", err)
 	}
 	newServer().Run()

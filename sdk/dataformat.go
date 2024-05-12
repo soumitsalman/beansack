@@ -1,5 +1,7 @@
 package sdk
 
+import "github.com/soumitsalman/beansack/nlp"
+
 // import "regexp"
 
 const (
@@ -11,6 +13,7 @@ const (
 )
 
 type Bean struct {
+	// ID         string          `json:"-,omitempty" bson:"-,omitempty"`
 	Url        string          `json:"url,omitempty" bson:"url,omitempty"`         // this is unique across each item regardless of the source and will be used as ID
 	Updated    int64           `json:"updated,omitempty" bson:"updated,omitempty"` // date of update of the post or comment. Empty for subreddits
 	Source     string          `json:"source,omitempty" bson:"source,omitempty"`   // which social media source is this coming from
@@ -19,15 +22,14 @@ type Bean struct {
 	Text       string          `json:"text,omitempty" bson:"text,omitempty"`
 	Author     string          `json:"author,omitempty" bson:"author,omitempty"`   // author of posts or comments. Empty for subreddits
 	Created    int64           `json:"created,omitempty" bson:"created,omitempty"` // date of creation of the post or comment. Empty for subreddits
-	MediaNoise *BeanMediaNoise `json:"noise,omitempty" bson:"noise,omitempty"`
+	MediaNoise *BeanMediaNoise `json:"noise,omitempty" bson:"-,omitempty"`         // don't serialize this for BSON
 
 	Keywords           []string  `json:"keywords,omitempty" bson:"keywords,omitempty"`                       // This can come from input and/or computed from a small language model
-	Summary            string    `json:"summary,omitempty" bson:"summary,omitempty"`                         // computed from a small language model
-	Sentiment          string    `json:"sentiment,omitempty" bson:"sentiment,omitempty"`                     // computed from a small language model
-	Embeddings         []float32 `json:"embeddings,omitempty" bson:"embeddings,omitempty"`                   // computed from a small language model
-	SearchEmbeddings   []float32 `json:"search_embeddings,omitempty" bson:"search_embeddings,omitempty"`     // computed from a small language model
-	CategoryEmbeddings []float32 `json:"category_embeddings,omitempty" bson:"category_embeddings,omitempty"` // computed from a small language model
-	SearchScore        float64   `json:"search_score,omitempty" bson:"search_score,omitempty"`               // this is used for internal search
+	Summary            string    `json:"summary,omitempty" bson:"summary,omitempty"`                         // generated from a large language model
+	Sentiment          string    `json:"sentiment,omitempty" bson:"sentiment,omitempty"`                     // generated from a large language model
+	SearchEmbeddings   []float32 `json:"search_embeddings,omitempty" bson:"search_embeddings,omitempty"`     // generated from a large language model
+	CategoryEmbeddings []float32 `json:"category_embeddings,omitempty" bson:"category_embeddings,omitempty"` // generated from a large language model
+	SearchScore        float64   `json:"search_score,omitempty" bson:"search_score,omitempty"`               // generated from a large language model
 }
 
 type BeanMediaNoise struct {
@@ -53,6 +55,23 @@ type KeywordMap struct {
 	Count   int    `bson:"count,omitempty"`
 }
 
+type BeanConcept struct {
+	KeyPhrase   string    `json:"keyphrase" bson:"keyphrase,omitempty" jsonschema_description:"'keyphrase' can be the name of a company, product, person, place, security vulnerability, entity, location, organization, object, condition, acronym, documents, service, disease, medical condition, vehicle, polical group etc."`
+	Event       string    `json:"event" bson:"event,omitempty" jsonschema_description:"'event' can be action, state or condition associated to the 'keyphrase' such as: what is the 'keyphrase' doing OR what is happening to the 'keyphrase' OR how is 'keyphrase' being impacted."`
+	Description string    `json:"description" bson:"description,omitempty" jsonschema_description:"A concise summary of the 'event' associated to the 'keyphrase'"`
+	Embeddings  []float32 `json:"-,omitempty" bson:"embeddings,omitempty"`
+	Updated     int64     `json:"updated,omitempty" bson:"updated,omitempty"`
+	Count       int       `json:"count,omitempty" bson:"count,omitempty"`
+}
+
+func NewKeyConcept(concept *nlp.KeyConcept) *BeanConcept {
+	return &BeanConcept{
+		KeyPhrase:   concept.KeyPhrase,
+		Event:       concept.Event,
+		Description: concept.Description,
+	}
+}
+
 func Equals(a, b *Bean) bool {
 	return (a.Url == b.Url)
 }
@@ -72,14 +91,3 @@ func (k *KeywordMap) PointsTo(a *Bean) bool {
 // func normalizeUrl(url string) string {
 // 	return regexp.MustCompile("[^a-zA-Z0-9]+").ReplaceAllString(url, "-")
 // }
-
-type TextEmbeddings struct {
-	Text       string    `json:"text,omitempty" bson:"text,omitempty"`
-	Embeddings []float32 `json:"embeddings,omitempty" bson:"embeddings,omitempty"`
-}
-
-type TextAttributes struct {
-	Keywords  []string `json:"keywords,omitempty" bson:"keywords,omitempty"`   // computed from a small language model
-	Summary   string   `json:"summary,omitempty" bson:"summary,omitempty"`     // computed from a small language model
-	Sentiment string   `json:"sentiment,omitempty" bson:"sentiment,omitempty"` // computed from a small language model
-}
