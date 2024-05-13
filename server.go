@@ -5,13 +5,10 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"github.com/soumitsalman/beansack/sdk"
 	"golang.org/x/time/rate"
 )
-
-// PUT /beans
-// GET /trending/beans?topic=keyword&window=1
-// GET /trending/topics?window=1
 
 const (
 	_ERROR_MESSAGE   = "YO! do you even code?! Input format is fucked. Read this: https://github.com/soumitsalman/beansack."
@@ -33,19 +30,6 @@ type queryParams struct {
 	Keywords []string `form:"keyword"`
 	Kinds    []string `form:"kind"`
 }
-
-// func (params *queryParams) assignDefaults() queryParams {
-// 	if params.Window == 0 {
-// 		params.Window = _SERVER_DEFAULT_WINDOW
-// 	}
-// 	if params.Kind == "" {
-// 		params.Kind = _SERVER_DEFAULT_KIND
-// 	}
-// 	if len(params.Keywords) == 0 {
-// 		params.Keywords = nil
-// 	}
-// 	return *params
-// }
 
 type bodyParams struct {
 	Categories []string `json:"categories,omitempty"`
@@ -176,10 +160,13 @@ func newServer() *gin.Engine {
 }
 
 func main() {
-	if err := sdk.InitializeBeanSack(getDBConnectionString(), getParrotBoxUrl(), getLLMServiceAPIKey()); err != nil {
-		log.Fatalln("initialization not working", err)
+	// TODO: remove later
+	godotenv.Load()
+
+	if err := sdk.InitializeBeanSack(getDBConnectionString(), getLLMServiceAPIKey()); err != nil {
+		log.Fatalln("Initialization not working", err)
 	}
 	newServer().Run()
-	// debug line
+	// // debug line
 	// debug_main()
 }

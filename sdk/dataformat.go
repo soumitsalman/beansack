@@ -1,8 +1,6 @@
 package sdk
 
-import "github.com/soumitsalman/beansack/nlp"
-
-// import "regexp"
+import "github.com/soumitsalman/beansack/nlp/parrotbox"
 
 const (
 	CHANNEL = "channel"
@@ -13,7 +11,7 @@ const (
 )
 
 type Bean struct {
-	// ID         string          `json:"-,omitempty" bson:"-,omitempty"`
+	ID         string          `json:"_id,omitempty" bson:"_id,omitempty"`
 	Url        string          `json:"url,omitempty" bson:"url,omitempty"`         // this is unique across each item regardless of the source and will be used as ID
 	Updated    int64           `json:"updated,omitempty" bson:"updated,omitempty"` // date of update of the post or comment. Empty for subreddits
 	Source     string          `json:"source,omitempty" bson:"source,omitempty"`   // which social media source is this coming from
@@ -61,11 +59,11 @@ type BeanConcept struct {
 	Description string    `json:"description" bson:"description,omitempty" jsonschema_description:"A concise summary of the 'event' associated to the 'keyphrase'"`
 	Embeddings  []float32 `json:"-,omitempty" bson:"embeddings,omitempty"`
 	Updated     int64     `json:"updated,omitempty" bson:"updated,omitempty"`
-	Count       int       `json:"count,omitempty" bson:"count,omitempty"`
+	MatchCount  int       `json:"match_count,omitempty" bson:"match_count,omitempty"`
 }
 
-func NewKeyConcept(concept *nlp.KeyConcept) *BeanConcept {
-	return &BeanConcept{
+func NewKeyConcept(concept *parrotbox.KeyConcept) BeanConcept {
+	return BeanConcept{
 		KeyPhrase:   concept.KeyPhrase,
 		Event:       concept.Event,
 		Description: concept.Description,

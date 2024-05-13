@@ -1,4 +1,4 @@
-package nlp
+package embeddings
 
 import (
 
@@ -22,10 +22,10 @@ const (
 )
 
 const (
-	_EMBEDDINGS_MODEL = "jinaai/jina-embeddings-v2-small-en"
-	_KEYWORDS_MODEL   = "ilsilfverskiold/tech-keywords-extractor"
-	_SUMMARY_MODEL    = "google/flan-t5-base"
-	_TEXT_CHUNK_SIZE  = 512
+	_EMBEDDINGS_MODEL = "nomic-ai/nomic-embed-text-v1"
+	// _KEYWORDS_MODEL   = "ilsilfverskiold/tech-keywords-extractor"
+	_SUMMARY_MODEL   = "google/flan-t5-base"
+	_TEXT_CHUNK_SIZE = 8192
 )
 
 type HuggingfaceDriver struct {
@@ -43,39 +43,50 @@ func NewHuggingfaceDriver() *HuggingfaceDriver {
 		log.Printf("[NewHuggingfaceDriver] Failed Loading %s. %v\n", _EMBEDDINGS_MODEL, err)
 		return nil
 	}
-	keywords_model, err := hfllm.New(hfllm.WithToken(getHuggingfaceToken()), hfllm.WithModel(_KEYWORDS_MODEL))
-	if err != nil {
-		log.Printf("[NewHuggingfaceDriver] Failed Loading %s. %v\n", _KEYWORDS_MODEL, err)
-		return nil
-	}
+	// keywords_model, err := hfllm.New(hfllm.WithToken(getHuggingfaceToken()), hfllm.WithModel(_KEYWORDS_MODEL))
+	// if err != nil {
+	// 	log.Printf("[NewHuggingfaceDriver] Failed Loading %s. %v\n", _KEYWORDS_MODEL, err)
+	// 	return nil
+	// }
 	summary_model, err := hfllm.New(hfllm.WithToken(getHuggingfaceToken()), hfllm.WithModel(_SUMMARY_MODEL))
 	if err != nil {
 		log.Printf("[NewHuggingfaceDriver] Failed Loading %s. %v\n", _SUMMARY_MODEL, err)
 		return nil
 	}
 	return &HuggingfaceDriver{
-		text_splitter:  textsplitter.NewTokenSplitter(textsplitter.WithChunkSize(_TEXT_CHUNK_SIZE)),
-		embedder:       embedder,
-		keywords_model: keywords_model,
+		text_splitter: textsplitter.NewTokenSplitter(textsplitter.WithChunkSize(_TEXT_CHUNK_SIZE)),
+		embedder:      embedder,
+		// keywords_model: keywords_model,
 		summary_moodel: summary_model,
 	}
 }
 
-func (driver *HuggingfaceDriver) CreateTextEmbeddings(texts []string) []TextEmbeddings {
-	var res []TextEmbeddings
+func (driver *HuggingfaceDriver) CreateTextEmbeddings(text string) ([]float32, error) {
+	var res []float32
+	retry.Do(func() error {
+		vecs, err := driver.embedder.EmbedDocuments(ctx.Background(), []string{text})
+		if err != nil {
+			log.Printf("[Huggingface Driver | %s]: error generating embeddings.%v\n", _EMBEDDINGS_MODEL, err)
+			return err
+		}
+		res = vecs[0]
+		return nil
+	}, retry.Delay(_RETRY_DELAY))
+	return res, nil
+}
+
+func (driver *HuggingfaceDriver) CreateBatchTextEmbeddings(texts []string) ([][]float32, error) {
+	var res [][]float32
 	retry.Do(func() error {
 		vecs, err := driver.embedder.EmbedDocuments(ctx.Background(), texts)
 		if err != nil {
-			log.Printf("[%s]: error generating embeddings.%v\n", _EMBEDDINGS_MODEL, err)
+			log.Printf("[Huggingface Driver | %s]: error generating embeddings.%v\n", _EMBEDDINGS_MODEL, err)
 			return err
 		}
-		res = make([]TextEmbeddings, len(texts))
-		for i := range texts {
-			res[i].Embeddings = vecs[i]
-		}
+		res = vecs
 		return nil
 	}, retry.Delay(_RETRY_DELAY))
-	return res
+	return res, nil
 }
 
 func getHuggingfaceToken() string {

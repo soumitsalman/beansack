@@ -1,4 +1,4 @@
-package nlp
+package parrotbox
 
 import (
 	"encoding/json"
@@ -75,7 +75,7 @@ func (p JsonOutputParser[T]) ParseWithPrompt(text string, _ llms.PromptValue) (a
 // GetFormatInstructions returns a string explaining how the llm should format
 // its response.
 func (p JsonOutputParser[T]) GetFormatInstructions() string {
-	return fmt.Sprintf(_structuredFormatInstructionTemplate, p.data_schema, datautils.ToJsonString(p.example_value))
+	return fmt.Sprintf(_structuredFormatInstructionTemplate, datautils.ToJsonString(p.data_schema), datautils.ToJsonString(p.example_value))
 }
 
 // Type returns the type of the output parser.
