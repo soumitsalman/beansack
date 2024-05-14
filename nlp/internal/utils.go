@@ -10,11 +10,12 @@ import (
 )
 
 const (
-	_RETRY_DELAY    = 10 * time.Second
+	SHORT_DELAY     = 10 * time.Millisecond
+	LONG_DELAY      = 10 * time.Second
 	_RETRY_ATTEMPTS = 3
 )
 
-func RetryOnFail[T any](original_func func() (T, error)) T {
+func RetryOnFail[T any](original_func func() (T, error), delay time.Duration) T {
 	var res T
 	var err error
 	// retry for each batch
@@ -27,7 +28,7 @@ func RetryOnFail[T any](original_func func() (T, error)) T {
 			// no error
 			return nil
 		},
-		retry.Delay(_RETRY_DELAY),
+		retry.Delay(delay),
 		retry.Attempts(_RETRY_ATTEMPTS),
 	)
 	return res
@@ -61,7 +62,7 @@ func PostHTTPRequestAndRetryOnFail[T any](url, auth_token string, input any) T {
 			return err
 		},
 		retry.Attempts(_RETRY_ATTEMPTS),
-		retry.Delay(_RETRY_DELAY),
+		retry.Delay(LONG_DELAY),
 	)
 	return result
 }

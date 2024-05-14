@@ -95,7 +95,7 @@ func (client *GoParrotboxClient) ExtractDigests(texts []string) []Digest {
 				}
 				// log.Printf("[goparrotboxdriver | DEBUG ONLY] ExtractDigest succeed.")
 				return result["value"].(Digest), nil
-			})
+			}, internal.LONG_DELAY)
 		output = append(output, res)
 	})
 	return output
@@ -116,7 +116,7 @@ func (client *GoParrotboxClient) ExtractKeyConcepts(texts []string) []KeyConcept
 				}
 				// log.Printf("[goparrotboxdriver | DEBUG ONLY] ExtractKeyConcepts succeed. %d\n", len(result["value"].([]KeyConcept)))
 				return result["value"].([]KeyConcept), nil
-			})
+			}, internal.LONG_DELAY)
 		if len(res) > 0 {
 			output = append(output, res...)
 		}

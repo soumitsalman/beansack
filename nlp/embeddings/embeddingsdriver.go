@@ -85,5 +85,6 @@ func (driver *EmbeddingsDriver) createEmbeddings(input *inferenceInput) [][]floa
 			} else {
 				return embs, nil
 			}
-		})
+		},
+		internal.SHORT_DELAY)
 }

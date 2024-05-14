@@ -35,7 +35,7 @@ const (
 	// vector and text search filters
 	_TOPN_SEARCH      = 10
 	_TOPN_NUGGET_MAP  = 100
-	_MIN_SCORE_VECTOR = 0.7
+	_MIN_SCORE_VECTOR = 0.75
 	_MIN_SCORE_TEXT   = 10
 
 	// rectification
