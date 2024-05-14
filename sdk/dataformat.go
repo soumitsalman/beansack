@@ -24,7 +24,7 @@ type Bean struct {
 
 	Keywords           []string  `json:"keywords,omitempty" bson:"keywords,omitempty"`                       // This can come from input and/or computed from a small language model
 	Summary            string    `json:"summary,omitempty" bson:"summary,omitempty"`                         // generated from a large language model
-	Sentiment          string    `json:"sentiment,omitempty" bson:"sentiment,omitempty"`                     // generated from a large language model
+	Topic              string    `json:"topic,omitempty" bson:"topic,omitempty"`                             // generated from a large language model
 	SearchEmbeddings   []float32 `json:"search_embeddings,omitempty" bson:"search_embeddings,omitempty"`     // generated from a large language model
 	CategoryEmbeddings []float32 `json:"category_embeddings,omitempty" bson:"category_embeddings,omitempty"` // generated from a large language model
 	SearchScore        float64   `json:"search_score,omitempty" bson:"search_score,omitempty"`               // generated from DB search algorithm

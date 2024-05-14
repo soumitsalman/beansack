@@ -35,17 +35,20 @@ const (
 	// vector and text search filters
 	_TOPN_SEARCH      = 10
 	_TOPN_NUGGET_MAP  = 100
-	_MIN_SCORE_VECTOR = 0.67
+	_MIN_SCORE_VECTOR = 0.7
 	_MIN_SCORE_TEXT   = 10
+
+	// rectification
+	_RECT_BATCH_SIZE = 10
 )
 
 var (
-	beanstore       *store.Store[Bean]
-	keywordstore    *store.Store[KeywordMap]
-	newsnuggetstore *store.Store[NewsNugget]
-	noisestore      *store.Store[MediaNoise]
-	emb_client      *embeddings.EmbeddingsDriver
-	pb_client       *parrotbox.GoParrotboxClient
+	beanstore    *store.Store[Bean]
+	keywordstore *store.Store[KeywordMap]
+	nuggetstore  *store.Store[NewsNugget]
+	noisestore   *store.Store[MediaNoise]
+	emb_client   *embeddings.EmbeddingsDriver
+	pb_client    *parrotbox.GoParrotboxClient
 )
 
 const (
@@ -57,16 +60,17 @@ const (
 var (
 	_PROJECTION_FIELDS = store.JSON{
 		// for beans
-		"url":      1,
-		"updated":  1,
-		"source":   1,
-		"title":    1,
-		"kind":     1,
-		"author":   1,
-		"created":  1,
-		"summary":  1,
-		"keywords": 1,
-		"topic":    1,
+		"url":          1,
+		"updated":      1,
+		"source":       1,
+		"title":        1,
+		"kind":         1,
+		"author":       1,
+		"created":      1,
+		"summary":      1,
+		"keywords":     1,
+		"topic":        1,
+		"search_score": 1,
 
 		// for media noise
 		"score":     1,
@@ -77,6 +81,7 @@ var (
 		"description": 1,
 	}
 	_GENERATED_FIELDS = []string{_CATEGORY_EMB, _SEARCH_EMB, _SUMMARY}
+	_SORT_BY_UPDATED  = store.JSON{"updated": -1}
 )
 
 type BeanSackError string
@@ -93,9 +98,9 @@ func InitializeBeanSack(db_conn_str, parrotbox_auth_token string) error {
 	)
 	noisestore = store.New[MediaNoise](db_conn_str, BEANSACK, NOISES)
 	keywordstore = store.New[KeywordMap](db_conn_str, BEANSACK, KEYWORDS)
-	newsnuggetstore = store.New[NewsNugget](db_conn_str, BEANSACK, NEWSNUGGETS)
+	nuggetstore = store.New[NewsNugget](db_conn_str, BEANSACK, NEWSNUGGETS)
 
-	if beanstore == nil || keywordstore == nil || newsnuggetstore == nil {
+	if beanstore == nil || keywordstore == nil || nuggetstore == nil {
 		return BeanSackError("Initialization Failed. db_conn_str Not working: " + db_conn_str)
 	}
 
@@ -147,38 +152,55 @@ func AddBeans(beans []Bean) error {
 	return nil
 }
 
-func GetBeans(filter_options ...Option) []Bean {
-	return beanstore.Get(makeFilter(filter_options...), _PROJECTION_FIELDS)
+func GetBeans(filter_options ...QueryOption) []Bean {
+	return beanstore.Get(makeFilter(filter_options...), _PROJECTION_FIELDS, _SORT_BY_UPDATED, _TOPN_SEARCH)
 }
 
-func TextSearch(keywords []string, filter_options ...Option) []Bean {
+func TextSearch(keywords []string, filter_options ...QueryOption) []Bean {
 	filter := makeFilter(filter_options...)
 	return beanstore.TextSearch(keywords,
 		store.WithTextFilter(filter),
 		store.WithProjection(_PROJECTION_FIELDS),
-		store.WithTextTopN(_TOPN_SEARCH),
-		store.WithMinSearchScore(_MIN_SCORE_TEXT))
+		store.WithMinSearchScore(_MIN_SCORE_TEXT),
+		store.WithTextTopN(_TOPN_SEARCH))
 }
 
-func NuggetSearch(nuggets []string, filter_options ...Option) []Bean {
+func NuggetSearch(nuggets []string, filter_options ...QueryOption) []Bean {
+	query_filter := makeFilter(filter_options...)
+
 	// get all the mapped urls
-	initial_list := newsnuggetstore.Get(
-		store.JSON{
-			"keyphrase": store.JSON{"$in": nuggets},
-		},
-		store.JSON{"mapped_urls": 1},
-	)
+	nuggets_filter := store.JSON{
+		"keyphrase": store.JSON{"$in": nuggets},
+	}
+	if updated, ok := query_filter["updated"]; ok {
+		nuggets_filter["updated"] = updated
+	}
+	initial_list := nuggetstore.Get(nuggets_filter, store.JSON{"mapped_urls": 1}, _SORT_BY_UPDATED, _TOPN_SEARCH)
+	// initial_list := nuggetstore.TextSearch(nuggets,
+	// 	store.WithTextFilter(nuggets_filter),
+	// 	store.WithProjection(store.JSON{"mapped_urls": 1}))
+	// log.Println(len(initial_list), "Nuggets found")
+
 	// merge mapped_urls into one array
 	mapped_urls := make([]string, 0, len(initial_list)*5)
 	datautils.ForEach(initial_list, func(item *NewsNugget) { mapped_urls = append(mapped_urls, item.BeanUrls...) })
 
 	// find the news articles with the urls in scope
-	filter := makeFilter(filter_options...)
-	filter["url"] = store.JSON{"$in": mapped_urls}
-	return beanstore.Get(makeFilter(filter_options...), _PROJECTION_FIELDS)
+	bean_filter := store.JSON{
+		"url": store.JSON{"$in": mapped_urls},
+	}
+	if kind, ok := query_filter["kind"]; ok {
+		bean_filter["kind"] = kind
+	}
+	return beanstore.Get(
+		bean_filter,
+		_PROJECTION_FIELDS,
+		_SORT_BY_UPDATED, // this way the newest ones are listed first
+		_TOPN_SEARCH,
+	)
 }
 
-func CategorySearch(categories []string, filter_options ...Option) []Bean {
+func CategorySearch(categories []string, filter_options ...QueryOption) []Bean {
 	filter := makeFilter(filter_options...)
 
 	log.Printf("[dbops] Generating embeddings for %d categories.\n", len(categories))
@@ -195,7 +217,7 @@ func CategorySearch(categories []string, filter_options ...Option) []Bean {
 	return result
 }
 
-func ConversationContextSearch(search_query string, filter_options ...Option) []Bean {
+func ContextSearch(search_query string, filter_options ...QueryOption) []Bean {
 	filter := makeFilter(filter_options...)
 
 	log.Println("[dbops] Generating embeddings for:", search_query)
@@ -220,11 +242,12 @@ func todo_GetMediaNoise(beans []Bean) []Bean {
 
 // this is for any recurring service
 // this is currently not being run as a recurring service
-func RectifyBeans() {
+func Rectify() {
 	// delete old stuff
 	beanstore.Delete(
 		store.JSON{
 			"updated": store.JSON{"$lte": timeValue(checkAndFixTimeWindow(15))},
+			"kind":    store.JSON{"$ne": CHANNEL},
 		},
 	)
 	keywordstore.Delete(
@@ -232,83 +255,94 @@ func RectifyBeans() {
 			"updated": store.JSON{"$lte": timeValue(checkAndFixTimeWindow(15))},
 		},
 	)
+	nuggetstore.Delete(
+		store.JSON{
+			"updated": store.JSON{"$lte": timeValue(checkAndFixTimeWindow(15))},
+		},
+	)
 
-	// generate the fields that do not exist
+	// BEANS: generate the fields that do not exist
 	for _, field_name := range _GENERATED_FIELDS {
 		beans := beanstore.Get(
 			store.JSON{
 				field_name: store.JSON{"$exists": false},
-				// "updated":  store.JSON{"$gte": timeValue(checkAndFixTimeWindow(2))},
+				"updated":  store.JSON{"$gte": timeValue(checkAndFixTimeWindow(2))},
+				"kind":     store.JSON{"$ne": CHANNEL},
 			},
 			store.JSON{
 				"url":  1,
 				"text": 1,
 			},
+			_SORT_BY_UPDATED, // this way the newest ones get priority
+			-1,
 		)
 		log.Printf("[dbops] Rectifying %s for %d items\n", field_name, len(beans))
 
-		// process batch
-		filters := getBeanIdFilters(beans)
-		texts := getTextFields(beans)
-		// store embeddings
-		updateBeans(field_name, texts, filters)
+		// store generated field
+		rectifyBeans(beans, field_name)
 	}
-}
 
-func remapNewsNuggets() {
-	nuggets := newsnuggetstore.Get(
+	// NUGGETS: generate embeddings for the ones that do not yet have it
+	// process data in batches so that there is at least partial success
+	// it is possible that embeddings generation failed even after retry.
+	// if things failed no need to insert those items
+	nuggets := nuggetstore.Get(
 		store.JSON{
-			"embeddings": store.JSON{"$exists": true}, // ignore if a nugget if it doesnt have an embedding
+			"embeddings": store.JSON{"$exists": false},
+			"updated":    store.JSON{"$gte": timeValue(checkAndFixTimeWindow(2))},
 		},
-		nil)
+		store.JSON{
+			"_id":         1,
+			"description": 1,
+		},
+		_SORT_BY_UPDATED, // this way the newest ones get priority
+		-1,
+	)
+	rectifyNewsNuggets(nuggets)
 
-	updates := datautils.Transform(nuggets, func(km *NewsNugget) any {
-		beans := beanstore.VectorSearch(km.Embeddings, _CATEGORY_EMB,
-			store.WithVectorFilter(store.JSON{
-				"kind": store.JSON{"$in": []string{ARTICLE, POST}},
-			}),
-			store.WithProjection(_PROJECTION_FIELDS),
-			store.WithMinSearchScore(_MIN_SCORE_VECTOR), //0.67 seems to be reasonably precise and not to lax
-			store.WithVectorTopN(_TOPN_NUGGET_MAP))
-
-		return NewsNugget{
-			MatchCount: len(beans),
-			BeanUrls:   datautils.Transform(beans, func(item *Bean) string { return item.Url }),
-		}
-	})
-	// log.Println(updates)
-	ids := datautils.Transform(nuggets, func(item *NewsNugget) store.JSON { return store.JSON{"_id": item.ID} })
-
-	newsnuggetstore.Update(updates, ids)
+	// MAPPING: now that the beans and nuggets have embeddings, remap them
+	rectifyNuggetMapping()
 }
 
 func GetTrendingNewsNuggets(time_window int) []NewsNugget {
-	time_window = checkAndFixTimeWindow(time_window)
-	pipeline := []store.JSON{
-		{
-			"$match": store.JSON{
-				"updated":     store.JSON{"$gte": timeValue(time_window)},
-				"match_count": store.JSON{"$gte": 2}, // maybe I need to change the range
-			},
+	// TODO: add some match based on the keyphrase
+	// pipeline := []store.JSON{
+	// 	{
+	// 		"$match": store.JSON{
+	// 			"updated":     store.JSON{"$gte": timeValue(checkAndFixTimeWindow(time_window))},
+	// 			"match_count": store.JSON{"$gte": 1}, // maybe I need to change the range
+	// 		},
+	// 	},
+	// 	{
+	// 		"$sort": store.JSON{"match_count": -1},
+	// 	},
+	// 	{
+	// 		"$limit": _TOPN_SEARCH,
+	// 	},
+	// 	{
+	// 		"$project": store.JSON{
+	// 			"embeddings":  0,
+	// 			"mapped_urls": 0,
+	// 			"description": 0,
+	// 			"_id":         0,
+	// 		},
+	// 	},
+	// }
+	// return nuggetstore.Aggregate(pipeline)
+
+	return nuggetstore.Get(
+		store.JSON{
+			"updated":     store.JSON{"$gte": timeValue(checkAndFixTimeWindow(time_window))},
+			"match_count": store.JSON{"$gte": 1}, // maybe I need to change the range
 		},
-		// TODO: add some match based on the keyphrase
-		// {
-		// 	"$group": store.JSON{
-		// 		"_id":   "$keyword",
-		// 		"count": store.JSON{"$count": 1},
-		// 	},
-		// },
-		{
-			"$sort": store.JSON{"match_count": -1},
+		store.JSON{
+			"embeddings":  0,
+			"mapped_urls": 0,
+			"_id":         0,
 		},
-		{
-			"$project": store.JSON{
-				"embeddings":  0,
-				"mapped_urls": 0,
-			},
-		},
-	}
-	return newsnuggetstore.Aggregate(pipeline)
+		store.JSON{"match_count": -1},
+		_TOPN_SEARCH,
+	)
 }
 
 // last_n_days can be between 1 - 30
@@ -347,58 +381,129 @@ func GetTrendingKeywords(time_window int) []KeywordMap {
 
 // this function uses large language model to generate all the custom fields and adds the to the DB
 func generateCustomFields(beans []Bean, batch_update_time int64) {
-	log.Println("Generating fields for a batch of", len(beans), "items")
-
-	// get identifier and text content for processing
-	filters := getBeanIdFilters(beans)
-	texts := getTextFields(beans)
-
-	// update beans with the generated fields
-	datautils.ForEach(_GENERATED_FIELDS, func(field *string) { updateBeans(*field, texts, filters) })
 
 	// extract key news nuggets and add them to the store
-	generateNewsNuggets(texts, batch_update_time)
+	generateNewsNuggets(getTextFields(beans), batch_update_time)
 
-	// now that the news nuggets and the beans are added remap the contents
-	remapNewsNuggets()
+	// run rectification and re-adjustment of all items that need updating
+	Rectify()
+
+	// // update beans with the generated fields
+	// datautils.ForEach(_GENERATED_FIELDS, func(field *string) {
+	// 	rectifyBeans(*field, beans)
+	// })
+
+	// // now that the news nuggets and the beans are added remap the contents
+	// rectifyNuggetMapping()
 }
 
 func generateNewsNuggets(texts []string, batch_update_time int64) {
 	// extract key newsnuggets
 	newsnuggets := datautils.Transform(pb_client.ExtractKeyConcepts(texts), NewKeyConcept)
-	// generate embeddings for the descriptions so that we can match it with the documents
-	nugget_descriptions := datautils.Transform(newsnuggets, func(item *NewsNugget) string { return item.Description })
-	embs := emb_client.CreateBatchTextEmbeddings(nugget_descriptions, embeddings.CATEGORIZATION)
-	// it is possible that embeddings generation failed even after retry.
-	// if things failed no need to insert those items
-	if len(embs) == len(newsnuggets) {
-		for i := 0; i < len(newsnuggets); i++ {
-			newsnuggets[i].Embeddings = embs[i]
-			newsnuggets[i].Updated = batch_update_time
-		}
-		newsnuggetstore.Add(newsnuggets)
-	}
+	newsnuggets = datautils.ForEach(newsnuggets, func(item *NewsNugget) { item.Updated = batch_update_time })
+	// // generate embeddings for the descriptions so that we can match it with the documents
+	// nugget_descriptions := datautils.Transform(newsnuggets, func(item *NewsNugget) string { return item.Description })
+	// embs := emb_client.CreateBatchTextEmbeddings(nugget_descriptions, embeddings.CATEGORIZATION)
+	// // it is possible that embeddings generation failed even after retry.
+	// // if things failed no need to insert those items
+	// if len(embs) == len(newsnuggets) {
+	// 	for i := 0; i < len(newsnuggets); i++ {
+	// 		newsnuggets[i].Embeddings = embs[i]
+	// 		newsnuggets[i].Updated = batch_update_time
+	// 	}
+
+	// }
+
+	nuggetstore.Add(newsnuggets)
 }
 
-func updateBeans(field_name string, texts []string, filters []store.JSON) {
-	var updates []any
+func rectifyBeans(beans []Bean, field_name string) {
+	log.Printf("[beanops] Generating %s for a batch of %d beans", field_name, len(beans))
 
-	switch field_name {
-	case _CATEGORY_EMB:
-		updates = datautils.Transform(texts, func(item *string) any {
-			return Bean{CategoryEmbeddings: emb_client.CreateTextEmbeddings(*item, embeddings.CATEGORIZATION)}
-		})
+	runInBatches(beans, _RECT_BATCH_SIZE, func(batch []Bean) {
+		texts := getTextFields(batch)
+		// generate whatever needs to be generated
+		var updates []any
+		switch field_name {
+		case _CATEGORY_EMB:
+			updates = datautils.Transform(texts, func(item *string) any {
+				return Bean{CategoryEmbeddings: emb_client.CreateTextEmbeddings(*item, embeddings.CATEGORIZATION)}
+			})
+		case _SEARCH_EMB:
+			updates = datautils.Transform(texts, func(item *string) any {
+				return Bean{SearchEmbeddings: emb_client.CreateTextEmbeddings(*item, embeddings.SEARCH_DOCUMENT)}
+			})
+		case _SUMMARY:
+			updates = datautils.Transform(pb_client.ExtractDigests(texts), func(item *parrotbox.Digest) any { return item })
+		}
+		// get identifier and text content for processing
+		filters := getBeanIdFilters(batch)
+		beanstore.Update(updates, filters)
+	})
+}
 
-	case _SEARCH_EMB:
-		updates = datautils.Transform(texts, func(item *string) any {
-			return Bean{SearchEmbeddings: emb_client.CreateTextEmbeddings(*item, embeddings.SEARCH_DOCUMENT)}
-		})
+func rectifyNewsNuggets(nuggets []NewsNugget) {
+	log.Printf("[beanops] Generating embeddings for %d News Nuggets.\n", len(nuggets))
 
-	case _SUMMARY:
-		updates = datautils.Transform(pb_client.ExtractDigests(texts), func(item *parrotbox.Digest) any { return item })
+	runInBatches(nuggets, _RECT_BATCH_SIZE, func(batch []NewsNugget) {
+		descriptions := datautils.Transform(batch, func(item *NewsNugget) string { return item.Description })
+		embs := datautils.Transform(
+			emb_client.CreateBatchTextEmbeddings(descriptions, embeddings.CATEGORIZATION),
+			func(item *[]float32) any {
+				return NewsNugget{Embeddings: *item}
+			})
+
+		if len(embs) == len(descriptions) {
+			ids := datautils.Transform(batch, func(item *NewsNugget) store.JSON { return store.JSON{"_id": item.ID} })
+			nuggetstore.Update(embs, ids)
+		}
+	})
+}
+
+func rectifyNuggetMapping() {
+	nuggets := nuggetstore.Get(
+		store.JSON{
+			"embeddings": store.JSON{"$exists": true}, // ignore if a nugget if it doesnt have an embedding
+		},
+		nil, nil, -1)
+
+	url_fields := store.JSON{"url": 1}
+	non_channels := store.JSON{
+		"kind": store.JSON{"$ne": CHANNEL},
 	}
+	updates := datautils.Transform(nuggets, func(km *NewsNugget) any {
+		// search with vector embedding
+		// this is still a fuzzy search and it does not always work well
+		// if it doesn't do a text search
+		beans := beanstore.VectorSearch(km.Embeddings, _CATEGORY_EMB,
+			store.WithVectorFilter(non_channels),
+			store.WithMinSearchScore(_MIN_SCORE_VECTOR), //0.67 seems to be reasonably precise and not to lax
+			store.WithVectorTopN(_TOPN_NUGGET_MAP),
+			store.WithProjection(url_fields))
+		// when vector search didn't pan out well do a text search
+		if len(beans) == 0 {
+			beans = beanstore.TextSearch([]string{km.KeyPhrase, km.Event},
+				store.WithTextFilter(non_channels),
+				store.WithMinSearchScore(_MIN_SCORE_TEXT),
+				store.WithTextTopN(5), // i might have to change this
+				store.WithProjection(url_fields))
+		}
 
-	beanstore.Update(updates, filters)
+		return NewsNugget{
+			MatchCount: len(beans),
+			BeanUrls:   datautils.Transform(beans, func(item *Bean) string { return item.Url }),
+		}
+	})
+	// log.Println(updates)
+	ids := datautils.Transform(nuggets, func(item *NewsNugget) store.JSON { return store.JSON{"_id": item.ID} })
+
+	nuggetstore.Update(updates, ids)
+}
+
+func runInBatches[T any](items []T, batch_size int, do func(batch []T)) {
+	for i := 0; i < len(items); i += batch_size {
+		do(datautils.SafeSlice(items, i, i+batch_size))
+	}
 }
 
 func getBeanId(bean *Bean) store.JSON {
@@ -417,7 +522,7 @@ func getTextFields(beans []Bean) []string {
 	})
 }
 
-func makeFilter(filter_options ...Option) store.JSON {
+func makeFilter(filter_options ...QueryOption) store.JSON {
 	filter := store.JSON{}
 	for _, opt := range filter_options {
 		opt(filter)

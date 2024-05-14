@@ -9,28 +9,9 @@ db.getCollection("digests").countDocuments({});
 
 //  vector index
 //  https://learn.microsoft.com/en-us/azure/cosmos-db/mongodb/vcore/vector-search
-db.runCommand(
-  {
-    "createIndexes": "beans",
-    "indexes": [
-      {
-        "name": "wholebeans_vec_search",
-        "key": 
-        {
-          "embeddings": "cosmosSearch"
-        },
-        "cosmosSearchOptions": 
-        {
-          "kind": "vector-ivf",
-          "numLists": 10,
-          "similarity": "COS",
-          "dimensions": 512
-        }
-      }
-    ]
-  }
-);
 
+
+// INDEXES FOR BEANS
 db.runCommand(
   {
     "createIndexes": "beans",
@@ -87,3 +68,37 @@ db.getCollection("beans").createIndex(
   }
 )
 db.getCollection("beans").createIndex({kind:1})
+
+// INDEXES FOR CONCEPTS/NEWS NUGGETS
+// text searching news nuggets
+db.concepts.createIndex(
+  {
+      keyphrase: "text",
+      event: "text"
+  },
+  {
+      name: "concept_text_search"
+  }
+);
+
+db.runCommand(
+  {
+    "createIndexes": "concepts",
+    "indexes": [
+      {
+        "name": "concept_vector_search",
+        "key": 
+        {
+          "embeddings": "cosmosSearch"
+        },
+        "cosmosSearchOptions": 
+        {
+          "kind": "vector-ivf",
+          "numLists": 10,
+          "similarity": "COS",
+          "dimensions": 768
+        }
+      }
+    ]
+  }
+);

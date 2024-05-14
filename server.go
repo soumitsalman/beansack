@@ -73,7 +73,7 @@ func searchBeansHandler(ctx *gin.Context) {
 	if len(body_params.Categories) > 0 {
 		res = sdk.CategorySearch(body_params.Categories, filters...)
 	} else if len(body_params.ConversationContext) > 0 {
-		res = sdk.ConversationContextSearch(body_params.ConversationContext, filters...)
+		res = sdk.ContextSearch(body_params.ConversationContext, filters...)
 	} else if len(body_params.NewsNuggets) > 0 {
 		res = sdk.NuggetSearch(body_params.NewsNuggets, filters...)
 	}
@@ -108,7 +108,7 @@ func getTrendingNuggetsHandler(ctx *gin.Context) {
 }
 
 func rectifyHandler(ctx *gin.Context) {
-	go sdk.RectifyBeans()
+	go sdk.Rectify()
 	ctx.String(http.StatusOK, _SUCCESS_MESSAGE)
 }
 
@@ -132,14 +132,14 @@ func initializeRateLimiter() gin.HandlerFunc {
 	}
 }
 
-func extractFilters(ctx *gin.Context) []sdk.Option {
+func extractFilters(ctx *gin.Context) []sdk.QueryOption {
 	var query_params queryParams
 	if ctx.BindQuery(&query_params) != nil {
 		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
 		return nil
 	}
 
-	filters := make([]sdk.Option, 0, 3)
+	filters := make([]sdk.QueryOption, 0, 3)
 	if len(query_params.Kinds) > 0 {
 		filters = append(filters, sdk.WithKindFilter(query_params.Kinds))
 	}
@@ -174,7 +174,7 @@ func newServer() *gin.Engine {
 	// GET /topics/trending?window=1
 	open_group.GET("/topics/trending", getTrendingTopicsHandler)
 	// GET /nuggets/trending?window=1
-	open_group.GET("/nuggets/trending", getTrendingTopicsHandler)
+	open_group.GET("/nuggets/trending", getTrendingNuggetsHandler)
 
 	return router
 }

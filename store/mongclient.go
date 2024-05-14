@@ -19,12 +19,10 @@ import (
 type JSON map[string]any
 
 type Store[T any] struct {
-	name             string
-	collection       *mongo.Collection
-	get_id           func(data *T) JSON
-	equals           func(a, b *T) bool
-	search_min_score float64
-	search_top_n     int
+	name       string
+	collection *mongo.Collection
+	get_id     func(data *T) JSON
+	equals     func(a, b *T) bool
 }
 
 func New[T any](connection_string, database, collection string, opts ...StoreOption[T]) *Store[T] {
@@ -72,7 +70,7 @@ func (store *Store[T]) Add(docs []T) ([]T, error) {
 	// don't insert if it already exists
 	// if there is no id function then treat each item as unique
 	if store.get_id != nil && store.equals != nil {
-		existing_items := store.Get(JSON{"$or": store.getIDs(docs)}, nil)
+		existing_items := store.Get(JSON{"$or": store.getIDs(docs)}, nil, nil, -1)
 		docs = datautils.Filter(docs, func(item *T) bool {
 			return !datautils.In(*item, existing_items, store.equals)
 		})
@@ -104,11 +102,21 @@ func (store *Store[T]) Update(docs []any, filters []JSON) {
 	log.Printf("[%s]: %d items updated.\n", store.name, res.MatchedCount)
 }
 
-func (store *Store[T]) Get(filter JSON, fields JSON) []T {
+func (store *Store[T]) Get(filter JSON, fields JSON, sort_by JSON, top_n int64) []T {
 	// _filter := JSON{"kind": "article"}
 	// _fields := bson.D{{"url", 1}, {"text", 1}}
 	// log.Println(datautils.ToJsonString(_filter), datautils.ToJsonString(_fields))
-	return store.extractFromCursor(store.collection.Find(ctx.Background(), filter, options.Find().SetProjection(fields)))
+	find_options := options.Find()
+	if len(fields) > 0 {
+		find_options = find_options.SetProjection(fields)
+	}
+	if len(sort_by) > 0 {
+		find_options = find_options.SetSort(sort_by)
+	}
+	if top_n > 0 {
+		find_options = find_options.SetLimit(top_n)
+	}
+	return store.extractFromCursor(store.collection.Find(ctx.Background(), filter, find_options))
 }
 
 func (store *Store[T]) Aggregate(pipeline any) []T {
@@ -116,75 +124,13 @@ func (store *Store[T]) Aggregate(pipeline any) []T {
 }
 
 func (store *Store[T]) TextSearch(query_texts []string, options ...SearchOption) []T {
-	// search_pipeline := []JSON{
-	// 	{
-	// 		"$match": datautils.AppendMaps(
-	// 			JSON{
-	// 				"$text": JSON{"$search": strings.Join(query_texts, ", ")},
-	// 			},
-	// 			filter),
-	// 	},
-	// 	{
-	// 		"$project": datautils.AppendMaps(
-	// 			JSON{
-	// 				"_id":          0,
-	// 				"search_score": JSON{"$meta": "textScore"},
-	// 			},
-	// 			fields),
-	// 	},
-	// 	{
-	// 		"$match": JSON{
-	// 			"search_score": JSON{"$gt": 1},
-	// 		},
-	// 	},
-	// 	{
-	// 		"$sort": JSON{"search_score": -1},
-	// 	},
-	// }
-	search_pipeline := createDefaultTextSearchPipeline(query_texts)
-	for _, opt := range options {
-		opt(search_pipeline)
-	}
+	search_pipeline := createTextSearchPipeline(query_texts, options)
 	return store.Aggregate(search_pipeline)
 }
 
 // query documents
-func (store *Store[T]) VectorSearch(query_embeddings []float32, vec_path string, options ...SearchOption /*filter JSON, fields JSON*/) []T {
-	// cosmos_search := JSON{
-	// 	"vector": query_embeddings,
-	// 	"path":   vec_path, // this hardcoded for ease. All embeddings will be in a field called embeddings
-	// 	"k":      store.search_top_n,
-	// }
-	// if len(filter) > 0 {
-	// 	cosmos_search["filter"] = filter
-	// }
-
-	// fields = datautils.AppendMaps(
-	// 	JSON{
-	// 		"search_score": JSON{"$meta": "searchScore"},
-	// 	},
-	// 	fields,
-	// )
-	// search_pipeline := []JSON{
-	// 	{
-	// 		"$search": JSON{
-	// 			"cosmosSearch":       cosmos_search,
-	// 			"returnStoredSource": true,
-	// 		},
-	// 	},
-	// 	{
-	// 		"$project": fields,
-	// 	},
-	// 	{
-	// 		"$match": JSON{
-	// 			"search_score": JSON{"$gte": store.search_min_score},
-	// 		},
-	// 	},
-	// }
-	search_pipeline := createDefaultVectorSearchPipeline(query_embeddings, vec_path)
-	for _, opt := range options {
-		opt(search_pipeline)
-	}
+func (store *Store[T]) VectorSearch(query_embeddings []float32, vec_path string, options ...SearchOption) []T {
+	search_pipeline := createVectorSearchPipeline(query_embeddings, vec_path, options)
 	return store.Aggregate(search_pipeline)
 }
 

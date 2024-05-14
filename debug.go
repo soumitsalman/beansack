@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"time"
 	// "fmt"
 	"log"
 	"os"
@@ -30,15 +31,16 @@ func debug_main() {
 	// fmt.Println(len(sdk.GetBeans(sdk.WithKindFilter([]string{"article"}))))
 
 	// run rectify
-	// sdk.RectifyBeans()
+	// sdk.Rectify()
 	// sdk.RemapNewsNuggets()
 
 	// test vector search
-	res := sdk.CategorySearch([]string{"Sergei Shoigu, Russia's longest-serving minister, has been removed as defence minister by President Vladimir Putin, with Andrei Belousov taking over the role."})
-	datautils.ForEach(res, func(item *sdk.Bean) { log.Printf("%f | %s\n", item.SearchScore, item.Title) })
+	// res := sdk.CategorySearch([]string{"Russia's longest-serving minister, has been removed as defence minister by President Vladimir Putin"})
+	// datautils.ForEach(res, func(item *sdk.Bean) { log.Printf("%f | %s\n", item.SearchScore, item.Title) })
 
-	res = sdk.TextSearch([]string{"Sergei Shoigu " + "Being removed as defence minister"})
-	datautils.ForEach(res, func(item *sdk.Bean) { log.Printf("%f | %s\n", item.SearchScore, item.Title) })
+	// test text search
+	// res := sdk.TextSearch([]string{"Sergei Shoigu", "Being removed as defence minister"})
+	// datautils.ForEach(res, func(item *sdk.Bean) { log.Printf("%f | %s\n", item.SearchScore, item.Title) })
 
 	// test add beans
 	// path := "news-dump/2024-03-21-12-52-24.json"
@@ -62,6 +64,16 @@ func debug_main() {
 	// datautils.ForEach(top_beans, func(v *sdk.Bean) {
 	// 	fmt.Println(time.Unix(v.Updated, 0).Format(time.DateTime), v.Title)
 	// })
+
+	// trending nuggets
+	nuggets := sdk.GetTrendingNewsNuggets(2)
+	datautils.ForEach(nuggets, func(item *sdk.NewsNugget) { log.Printf("%d | %s: %s\n", item.MatchCount, item.KeyPhrase, item.Event) })
+
+	// nugget search
+	beans := sdk.NuggetSearch([]string{"Cinterion cellular modems"}, sdk.WithTimeWindowFilter(2))
+	datautils.ForEach(beans, func(item *sdk.Bean) {
+		log.Printf("[%s] %s | %s\n", item.Source, time.Unix(item.Updated, 0).Format(time.DateTime), item.Title)
+	})
 
 }
 
