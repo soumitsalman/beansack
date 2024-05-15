@@ -6,6 +6,7 @@ import (
 
 	"github.com/soumitsalman/beansack/nlp/embeddings"
 	"github.com/soumitsalman/beansack/nlp/parrotbox"
+	"github.com/soumitsalman/beansack/nlp/utils"
 	"github.com/soumitsalman/beansack/store"
 	datautils "github.com/soumitsalman/data-utils"
 )
@@ -26,17 +27,16 @@ const (
 	// these 3 can be cut off
 	_MAX_TEXT_LENGTH    = 4096 * 4
 	_MIN_KEYWORD_LENGTH = 3
-	_NLP_OPS_BATCH_SIZE = 10
 
 	// time windows
-	_FOUR_WEEKS = 28
-	_ONE_DAY    = 1
+	_FOUR_WEEKS    = 28
+	_ONE_DAY       = 1
+	_DELETE_WINDOW = 15
 
 	// vector and text search filters
-	_TOPN_SEARCH      = 10
-	_TOPN_NUGGET_MAP  = 100
-	_MIN_SCORE_VECTOR = 0.75
-	_MIN_SCORE_TEXT   = 10
+	_DEFAULT_CATEGORY_SCORE = 0.70
+	_DEFAULT_CONTEXT_SCORE  = 0.62
+	_DEFAULT_SCORE_TEXT     = 10
 
 	// rectification
 	_RECT_BATCH_SIZE = 10
@@ -129,7 +129,7 @@ func AddBeans(beans []Bean) error {
 	datautils.ForEach(beans, func(item *Bean) {
 		item.ID = item.Url
 		item.Updated = update_time
-		item.Text = datautils.TruncateTextWithEllipsis(item.Text, _MAX_TEXT_LENGTH)
+		item.Text = utils.TruncateTextOnTokenCount(item.Text)
 		item.MediaNoise = nil
 	})
 	datautils.ForEach(medianoises, func(item *MediaNoise) {
@@ -152,34 +152,23 @@ func AddBeans(beans []Bean) error {
 	return nil
 }
 
-func GetBeans(filter_options ...QueryOption) []Bean {
-	return beanstore.Get(makeFilter(filter_options...), _PROJECTION_FIELDS, _SORT_BY_UPDATED, _TOPN_SEARCH)
-}
-
-func TextSearch(keywords []string, filter_options ...QueryOption) []Bean {
-	filter := makeFilter(filter_options...)
+func TextSearch(keywords []string, settings *SearchOptions) []Bean {
 	return beanstore.TextSearch(keywords,
-		store.WithTextFilter(filter),
+		store.WithTextFilter(settings.Filter),
 		store.WithProjection(_PROJECTION_FIELDS),
-		store.WithMinSearchScore(_MIN_SCORE_TEXT),
-		store.WithTextTopN(_TOPN_SEARCH))
+		store.WithMinSearchScore(_DEFAULT_SCORE_TEXT),
+		store.WithTextTopN(settings.TopN))
 }
 
-func NuggetSearch(nuggets []string, filter_options ...QueryOption) []Bean {
-	query_filter := makeFilter(filter_options...)
-
+func NuggetSearch(nuggets []string, settings *SearchOptions) []Bean {
 	// get all the mapped urls
 	nuggets_filter := store.JSON{
 		"keyphrase": store.JSON{"$in": nuggets},
 	}
-	if updated, ok := query_filter["updated"]; ok {
+	if updated, ok := settings.Filter["updated"]; ok {
 		nuggets_filter["updated"] = updated
 	}
-	initial_list := nuggetstore.Get(nuggets_filter, store.JSON{"mapped_urls": 1}, _SORT_BY_UPDATED, _TOPN_SEARCH)
-	// initial_list := nuggetstore.TextSearch(nuggets,
-	// 	store.WithTextFilter(nuggets_filter),
-	// 	store.WithProjection(store.JSON{"mapped_urls": 1}))
-	// log.Println(len(initial_list), "Nuggets found")
+	initial_list := nuggetstore.Get(nuggets_filter, store.JSON{"mapped_urls": 1}, store.JSON{"match_count": -1}, settings.TopN)
 
 	// merge mapped_urls into one array
 	mapped_urls := make([]string, 0, len(initial_list)*5)
@@ -189,44 +178,46 @@ func NuggetSearch(nuggets []string, filter_options ...QueryOption) []Bean {
 	bean_filter := store.JSON{
 		"url": store.JSON{"$in": mapped_urls},
 	}
-	if kind, ok := query_filter["kind"]; ok {
+	if kind, ok := settings.Filter["kind"]; ok {
 		bean_filter["kind"] = kind
 	}
 	return beanstore.Get(
 		bean_filter,
 		_PROJECTION_FIELDS,
 		_SORT_BY_UPDATED, // this way the newest ones are listed first
-		_TOPN_SEARCH,
+		settings.TopN,
 	)
 }
 
-func CategorySearch(categories []string, filter_options ...QueryOption) []Bean {
-	filter := makeFilter(filter_options...)
+func VectorSearch(options *SearchOptions) []Bean {
+	var embs [][]float32
+	var vec_field = _CATEGORY_EMB
+	var min_score = _DEFAULT_CATEGORY_SCORE
 
-	log.Printf("[dbops] Generating embeddings for %d categories.\n", len(categories))
-	search_vectors := emb_client.CreateBatchTextEmbeddings(categories, embeddings.CATEGORIZATION)
-	result := make([]Bean, 0, len(categories)*5)
-	datautils.ForEach(search_vectors, func(vec *[]float32) {
-		result = append(result,
-			beanstore.VectorSearch(*vec, _CATEGORY_EMB,
-				store.WithVectorFilter(filter),
-				store.WithProjection(_PROJECTION_FIELDS),
-				store.WithMinSearchScore(_MIN_SCORE_VECTOR),
-				store.WithVectorTopN(_TOPN_SEARCH))...)
-	})
-	return result
-}
+	if len(options.SearchEmbeddings) > 0 {
+		// no need to generate embeddings. search for CATEGORIES defined by these
+		embs = options.SearchEmbeddings
+	} else if len(options.SearchCategories) > 0 {
+		// generate embeddings for these categories
+		log.Printf("[dbops] Generating embeddings for %d categories.\n", len(options.SearchCategories))
+		embs = emb_client.CreateBatchTextEmbeddings(options.SearchCategories, embeddings.CATEGORIZATION)
+	} else if len(options.SearchContext) > 0 {
+		// generate embeddings for the context and search using SEARCH EMBEDDINGS
+		log.Println("[dbops] Generating embeddings for:", options.SearchContext)
+		embs = [][]float32{emb_client.CreateTextEmbeddings(options.SearchContext, embeddings.SEARCH_QUERY)}
+		vec_field, min_score = _SEARCH_EMB, _DEFAULT_CONTEXT_SCORE
+	} else {
+		log.Println("[beanops] No `search` parameter defined.")
+		return nil
+	}
 
-func ContextSearch(search_query string, filter_options ...QueryOption) []Bean {
-	filter := makeFilter(filter_options...)
-
-	log.Println("[dbops] Generating embeddings for:", search_query)
-	search_vector := emb_client.CreateTextEmbeddings(search_query, embeddings.SEARCH_QUERY)
-	return beanstore.VectorSearch(search_vector, _SEARCH_EMB,
-		store.WithVectorFilter(filter),
+	return beanstore.VectorSearch(
+		embs,
+		vec_field,
+		store.WithVectorFilter(options.Filter),
 		store.WithProjection(_PROJECTION_FIELDS),
-		store.WithMinSearchScore(_MIN_SCORE_VECTOR),
-		store.WithVectorTopN(_TOPN_SEARCH))
+		store.WithMinSearchScore(min_score),
+		store.WithVectorTopN(options.TopN))
 }
 
 func todo_GetMediaNoise(beans []Bean) []Bean {
@@ -243,30 +234,26 @@ func todo_GetMediaNoise(beans []Bean) []Bean {
 // this is for any recurring service
 // this is currently not being run as a recurring service
 func Rectify() {
+	delete_filter := store.JSON{
+		"updated": store.JSON{"$lte": timeValue(_DELETE_WINDOW)},
+	}
 	// delete old stuff
 	beanstore.Delete(
-		store.JSON{
-			"updated": store.JSON{"$lte": timeValue(checkAndFixTimeWindow(15))},
-			"kind":    store.JSON{"$ne": CHANNEL},
-		},
+		datautils.AppendMaps(
+			delete_filter,
+			store.JSON{
+				"kind": store.JSON{"$ne": CHANNEL},
+			}),
 	)
-	keywordstore.Delete(
-		store.JSON{
-			"updated": store.JSON{"$lte": timeValue(checkAndFixTimeWindow(15))},
-		},
-	)
-	nuggetstore.Delete(
-		store.JSON{
-			"updated": store.JSON{"$lte": timeValue(checkAndFixTimeWindow(15))},
-		},
-	)
+	keywordstore.Delete(delete_filter)
+	nuggetstore.Delete(delete_filter)
 
 	// BEANS: generate the fields that do not exist
 	for _, field_name := range _GENERATED_FIELDS {
 		beans := beanstore.Get(
 			store.JSON{
 				field_name: store.JSON{"$exists": false},
-				"updated":  store.JSON{"$gte": timeValue(checkAndFixTimeWindow(2))},
+				"updated":  store.JSON{"$gte": timeValue(2)},
 				"kind":     store.JSON{"$ne": CHANNEL},
 			},
 			store.JSON{
@@ -289,7 +276,7 @@ func Rectify() {
 	nuggets := nuggetstore.Get(
 		store.JSON{
 			"embeddings": store.JSON{"$exists": false},
-			"updated":    store.JSON{"$gte": timeValue(checkAndFixTimeWindow(2))},
+			"updated":    store.JSON{"$gte": timeValue(2)},
 		},
 		store.JSON{
 			"_id":         1,
@@ -304,116 +291,53 @@ func Rectify() {
 	rectifyNuggetMapping()
 }
 
-func GetTrendingNewsNuggets(time_window int) []NewsNugget {
-	// TODO: add some match based on the keyphrase
-	// pipeline := []store.JSON{
-	// 	{
-	// 		"$match": store.JSON{
-	// 			"updated":     store.JSON{"$gte": timeValue(checkAndFixTimeWindow(time_window))},
-	// 			"match_count": store.JSON{"$gte": 1}, // maybe I need to change the range
-	// 		},
-	// 	},
-	// 	{
-	// 		"$sort": store.JSON{"match_count": -1},
-	// 	},
-	// 	{
-	// 		"$limit": _TOPN_SEARCH,
-	// 	},
-	// 	{
-	// 		"$project": store.JSON{
-	// 			"embeddings":  0,
-	// 			"mapped_urls": 0,
-	// 			"description": 0,
-	// 			"_id":         0,
-	// 		},
-	// 	},
-	// }
-	// return nuggetstore.Aggregate(pipeline)
-
-	return nuggetstore.Get(
-		store.JSON{
-			"updated":     store.JSON{"$gte": timeValue(checkAndFixTimeWindow(time_window))},
-			"match_count": store.JSON{"$gte": 1}, // maybe I need to change the range
-		},
-		store.JSON{
-			"embeddings":  0,
-			"mapped_urls": 0,
-			"_id":         0,
-		},
-		store.JSON{"match_count": -1},
-		_TOPN_SEARCH,
-	)
-}
-
-// last_n_days can be between 1 - 30
-func GetTrendingKeywords(time_window int) []KeywordMap {
-	time_window = checkAndFixTimeWindow(time_window)
-	trending_keys_pipeline := []store.JSON{
-		{
-			"$match": store.JSON{
-				"updated": store.JSON{"$gte": timeValue(time_window)},
-			},
-		},
-		{
-			"$group": store.JSON{
-				"_id":   "$keyword",
-				"count": store.JSON{"$count": 1},
-			},
-		},
-		{
-			"$match": store.JSON{
-				"count": store.JSON{"$gt": 2},
-			},
-		},
-		{
-			"$sort": store.JSON{"count": -1},
-		},
-		{
-			"$project": store.JSON{
-				"keyword": "$_id",
-				"count":   1,
-				"_id":     0,
-			},
-		},
+func TrendingNuggets(query *SearchOptions) []NewsNugget {
+	query.Filter["match_count"] = store.JSON{"$gte": 1}
+	projection := store.JSON{
+		"embeddings":  0,
+		"mapped_urls": 0,
+		"_id":         0,
 	}
-	return keywordstore.Aggregate(trending_keys_pipeline)
+	sort_by := store.JSON{"match_count": -1}
+
+	if len(query.SearchEmbeddings) > 0 {
+		return nuggetstore.VectorSearch(
+			query.SearchEmbeddings,
+			"embeddings",
+			store.WithMinSearchScore(_DEFAULT_CATEGORY_SCORE),
+			store.WithVectorFilter(query.Filter),
+			store.WithProjection(projection),
+			store.WithVectorTopN(query.TopN),
+			store.WithSortBy(sort_by),
+		)
+	} else if len(query.SearchCategories) > 0 {
+		log.Printf("[beanops] Creating embeddings for %d categories.\n", len(query.SearchCategories))
+		return nuggetstore.VectorSearch(
+			emb_client.CreateBatchTextEmbeddings(query.SearchCategories, embeddings.CATEGORIZATION),
+			"embeddings",
+			store.WithMinSearchScore(_DEFAULT_CATEGORY_SCORE),
+			store.WithVectorFilter(query.Filter),
+			store.WithProjection(projection),
+			store.WithVectorTopN(query.TopN),
+			store.WithSortBy(sort_by),
+		)
+	} else {
+		return nuggetstore.Get(query.Filter, projection, sort_by, query.TopN)
+	}
 }
 
 // this function uses large language model to generate all the custom fields and adds the to the DB
 func generateCustomFields(beans []Bean, batch_update_time int64) {
-
 	// extract key news nuggets and add them to the store
 	generateNewsNuggets(getTextFields(beans), batch_update_time)
-
 	// run rectification and re-adjustment of all items that need updating
 	Rectify()
-
-	// // update beans with the generated fields
-	// datautils.ForEach(_GENERATED_FIELDS, func(field *string) {
-	// 	rectifyBeans(*field, beans)
-	// })
-
-	// // now that the news nuggets and the beans are added remap the contents
-	// rectifyNuggetMapping()
 }
 
 func generateNewsNuggets(texts []string, batch_update_time int64) {
 	// extract key newsnuggets
 	newsnuggets := datautils.Transform(pb_client.ExtractKeyConcepts(texts), NewKeyConcept)
 	newsnuggets = datautils.ForEach(newsnuggets, func(item *NewsNugget) { item.Updated = batch_update_time })
-	// // generate embeddings for the descriptions so that we can match it with the documents
-	// nugget_descriptions := datautils.Transform(newsnuggets, func(item *NewsNugget) string { return item.Description })
-	// embs := emb_client.CreateBatchTextEmbeddings(nugget_descriptions, embeddings.CATEGORIZATION)
-	// // it is possible that embeddings generation failed even after retry.
-	// // if things failed no need to insert those items
-	// if len(embs) == len(newsnuggets) {
-	// 	for i := 0; i < len(newsnuggets); i++ {
-	// 		newsnuggets[i].Embeddings = embs[i]
-	// 		newsnuggets[i].Updated = batch_update_time
-	// 	}
-
-	// }
-
 	nuggetstore.Add(newsnuggets)
 }
 
@@ -444,7 +368,6 @@ func rectifyBeans(beans []Bean, field_name string) {
 
 func rectifyNewsNuggets(nuggets []NewsNugget) {
 	log.Printf("[beanops] Generating embeddings for %d News Nuggets.\n", len(nuggets))
-
 	runInBatches(nuggets, _RECT_BATCH_SIZE, func(batch []NewsNugget) {
 		descriptions := datautils.Transform(batch, func(item *NewsNugget) string { return item.Description })
 		embs := datautils.Transform(
@@ -475,20 +398,20 @@ func rectifyNuggetMapping() {
 		// search with vector embedding
 		// this is still a fuzzy search and it does not always work well
 		// if it doesn't do a text search
-		beans := beanstore.VectorSearch(km.Embeddings, _CATEGORY_EMB,
+		beans := beanstore.VectorSearch([][]float32{km.Embeddings},
+			_CATEGORY_EMB,
 			store.WithVectorFilter(non_channels),
-			store.WithMinSearchScore(_MIN_SCORE_VECTOR), //0.67 seems to be reasonably precise and not to lax
-			store.WithVectorTopN(_TOPN_NUGGET_MAP),
+			store.WithMinSearchScore(_DEFAULT_CATEGORY_SCORE), //0.67 seems to be reasonably precise and not to lax
+			store.WithVectorTopN(_MAX_TOPN),
 			store.WithProjection(url_fields))
-		// when vector search didn't pan out well do a text search
+		// when vector search didn't pan out well do a text search and take the top 2
 		if len(beans) == 0 {
 			beans = beanstore.TextSearch([]string{km.KeyPhrase, km.Event},
 				store.WithTextFilter(non_channels),
-				store.WithMinSearchScore(_MIN_SCORE_TEXT),
-				store.WithTextTopN(5), // i might have to change this
+				store.WithMinSearchScore(_DEFAULT_SCORE_TEXT),
+				store.WithTextTopN(2), // i might have to change this
 				store.WithProjection(url_fields))
 		}
-
 		return NewsNugget{
 			MatchCount: len(beans),
 			BeanUrls:   datautils.Transform(beans, func(item *Bean) string { return item.Url }),
@@ -520,27 +443,4 @@ func getTextFields(beans []Bean) []string {
 	return datautils.Transform(beans, func(bean *Bean) string {
 		return bean.Text
 	})
-}
-
-func makeFilter(filter_options ...QueryOption) store.JSON {
-	filter := store.JSON{}
-	for _, opt := range filter_options {
-		opt(filter)
-	}
-	return filter
-}
-
-func timeValue(time_window int) int64 {
-	return time.Now().AddDate(0, 0, -time_window).Unix()
-}
-
-func checkAndFixTimeWindow(time_window int) int {
-	switch {
-	case time_window > _FOUR_WEEKS:
-		return _FOUR_WEEKS
-	case time_window < _ONE_DAY:
-		return _ONE_DAY
-	default:
-		return time_window
-	}
 }

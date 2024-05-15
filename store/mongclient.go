@@ -102,7 +102,7 @@ func (store *Store[T]) Update(docs []any, filters []JSON) {
 	log.Printf("[%s]: %d items updated.\n", store.name, res.MatchedCount)
 }
 
-func (store *Store[T]) Get(filter JSON, fields JSON, sort_by JSON, top_n int64) []T {
+func (store *Store[T]) Get(filter JSON, fields JSON, sort_by JSON, top_n int) []T {
 	// _filter := JSON{"kind": "article"}
 	// _fields := bson.D{{"url", 1}, {"text", 1}}
 	// log.Println(datautils.ToJsonString(_filter), datautils.ToJsonString(_fields))
@@ -114,7 +114,7 @@ func (store *Store[T]) Get(filter JSON, fields JSON, sort_by JSON, top_n int64) 
 		find_options = find_options.SetSort(sort_by)
 	}
 	if top_n > 0 {
-		find_options = find_options.SetLimit(top_n)
+		find_options = find_options.SetLimit(int64(top_n))
 	}
 	return store.extractFromCursor(store.collection.Find(ctx.Background(), filter, find_options))
 }
@@ -123,15 +123,22 @@ func (store *Store[T]) Aggregate(pipeline any) []T {
 	return store.extractFromCursor(store.collection.Aggregate(ctx.Background(), pipeline))
 }
 
+// regular keyword/text search
 func (store *Store[T]) TextSearch(query_texts []string, options ...SearchOption) []T {
 	search_pipeline := createTextSearchPipeline(query_texts, options)
 	return store.Aggregate(search_pipeline)
 }
 
-// query documents
-func (store *Store[T]) VectorSearch(query_embeddings []float32, vec_path string, options ...SearchOption) []T {
-	search_pipeline := createVectorSearchPipeline(query_embeddings, vec_path, options)
-	return store.Aggregate(search_pipeline)
+func (store *Store[T]) VectorSearch(query_embeddings [][]float32, vec_path string, options ...SearchOption) []T {
+	// this is just initial memory allocation. it will grow as needed
+	result := make([]T, 0, len(query_embeddings)*_DEFAULT_SEARCH_TOP_N)
+	// search for each query embedding and merge the results
+	// TODO: sort by search score later
+	datautils.ForEach(query_embeddings, func(vec *[]float32) {
+		search_pipeline := createVectorSearchPipeline(*vec, vec_path, options)
+		result = append(result, store.Aggregate(search_pipeline)...)
+	})
+	return result
 }
 
 func (store *Store[T]) Delete(filter JSON) {

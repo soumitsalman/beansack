@@ -20,21 +20,23 @@ const (
 	_RATE_TPS   = 2000
 )
 
-const (
-	_SERVER_DEFAULT_WINDOW = 1
-	_SERVER_DEFAULT_KIND   = sdk.ARTICLE
-)
+// const (
+// 	_SERVER_DEFAULT_WINDOW = 1
+// 	_SERVER_DEFAULT_KIND   = sdk.ARTICLE
+// )
 
 type queryParams struct {
-	Window   int      `form:"window"`
-	Keywords []string `form:"keyword"`
-	Kinds    []string `form:"kind"`
+	Window int      `form:"window"`
+	TopN   int      `form:"topn"`
+	Kinds  []string `form:"kind"`
+	// Keywords []string `form:"keyword"`
 }
 
 type bodyParams struct {
-	NewsNuggets         []string `json:"newsnuggets,omitempty"`
-	Categories          []string `json:"categories,omitempty"`
-	ConversationContext string   `json:"search_text,omitempty"`
+	Nuggets    []string    `json:"nuggets,omitempty"`
+	Categories []string    `json:"categories,omitempty"`
+	Embeddings [][]float32 `json:"embeddings,omitempty"`
+	Context    string      `json:"context,omitempty"`
 }
 
 func newBeansHandler(ctx *gin.Context) {
@@ -47,64 +49,54 @@ func newBeansHandler(ctx *gin.Context) {
 	}
 }
 
-func getBeansHandler(ctx *gin.Context) {
-	filters := extractFilters(ctx)
-	if filters == nil {
-		return
-	}
+// func getBeansHandler(ctx *gin.Context) {
+// 	filters := extractQueryParams(ctx)
+// 	if filters == nil {
+// 		return
+// 	}
 
-	res := sdk.GetBeans(filters...)
-	sendBeans(res, ctx)
-}
+// 	res := sdk.GetBeans(filters...)
+// 	sendBeans(res, ctx)
+// }
 
 func searchBeansHandler(ctx *gin.Context) {
-	filters := extractFilters(ctx)
-	if filters == nil {
+	options := extractQueryParams(ctx)
+	if options == nil {
 		return
 	}
-
 	var body_params bodyParams
-	if ctx.BindJSON(&body_params) != nil {
-		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
-		return
+	if ctx.ShouldBindJSON(&body_params) != nil {
+		log.Println("[server] The body is malformed.")
+	} else {
+		// just blindly assign both. The sdk function will arbitrate
+		options.SearchCategories = body_params.Categories
+		options.SearchEmbeddings = body_params.Embeddings
+		options.SearchContext = body_params.Context
 	}
 
 	var res []sdk.Bean
-	if len(body_params.Categories) > 0 {
-		res = sdk.CategorySearch(body_params.Categories, filters...)
-	} else if len(body_params.ConversationContext) > 0 {
-		res = sdk.ContextSearch(body_params.ConversationContext, filters...)
-	} else if len(body_params.NewsNuggets) > 0 {
-		res = sdk.NuggetSearch(body_params.NewsNuggets, filters...)
+	if len(body_params.Nuggets) > 0 {
+		res = sdk.NuggetSearch(body_params.Nuggets, options)
+	} else {
+		res = sdk.VectorSearch(options)
 	}
-
 	sendBeans(res, ctx)
 }
 
-func sendBeans(res []sdk.Bean, ctx *gin.Context) {
-	if len(res) > 0 {
-		ctx.JSON(http.StatusOK, res)
-	} else {
-		ctx.Status(http.StatusNoContent)
-	}
-}
-
-func getTrendingTopicsHandler(ctx *gin.Context) {
-	var query_params queryParams
-	if ctx.BindQuery(&query_params) != nil {
-		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
-	} else {
-		ctx.JSON(http.StatusOK, sdk.GetTrendingKeywords(query_params.Window))
-	}
-}
-
 func getTrendingNuggetsHandler(ctx *gin.Context) {
-	var query_params queryParams
-	if ctx.BindQuery(&query_params) != nil {
-		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
-	} else {
-		ctx.JSON(http.StatusOK, sdk.GetTrendingNewsNuggets(query_params.Window))
+	options := extractQueryParams(ctx)
+	if options == nil {
+		return
 	}
+	var body_params bodyParams
+	if ctx.ShouldBindJSON(&body_params) != nil {
+		log.Println("[server] The body is malformed.")
+	} else {
+		// just blindly assign both. The sdk function will arbitrate
+		options.SearchCategories = body_params.Categories
+		options.SearchEmbeddings = body_params.Embeddings
+	}
+	ctx.JSON(http.StatusOK, sdk.TrendingNuggets(options))
 }
 
 func rectifyHandler(ctx *gin.Context) {
@@ -132,24 +124,31 @@ func initializeRateLimiter() gin.HandlerFunc {
 	}
 }
 
-func extractFilters(ctx *gin.Context) []sdk.QueryOption {
+func extractQueryParams(ctx *gin.Context) *sdk.SearchOptions {
 	var query_params queryParams
-	if ctx.BindQuery(&query_params) != nil {
+	if ctx.ShouldBindQuery(&query_params) != nil {
 		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
 		return nil
 	}
-
-	filters := make([]sdk.QueryOption, 0, 3)
+	options := sdk.NewQueryOptions()
 	if len(query_params.Kinds) > 0 {
-		filters = append(filters, sdk.WithKindFilter(query_params.Kinds))
+		options.WithKind(query_params.Kinds)
 	}
 	if query_params.Window > 0 {
-		filters = append(filters, sdk.WithTimeWindowFilter(query_params.Window))
+		options.WithTimeWindow(query_params.Window)
 	}
-	if len(query_params.Keywords) > 0 {
-		filters = append(filters, sdk.WithKeywordsFilter(query_params.Keywords))
+	if query_params.TopN > 0 {
+		options.WithTopN(query_params.TopN)
 	}
-	return filters
+	return options
+}
+
+func sendBeans(res []sdk.Bean, ctx *gin.Context) {
+	if len(res) > 0 {
+		ctx.JSON(http.StatusOK, res)
+	} else {
+		ctx.Status(http.StatusNoContent)
+	}
 }
 
 func newServer() *gin.Engine {
@@ -165,14 +164,14 @@ func newServer() *gin.Engine {
 	// NO NEED FOR AUTH: this is open to public
 	open_group := router.Group("/")
 	open_group.Use(initializeRateLimiter())
-	// GET /beans/trending?window=1&keyword=amazon&keyword=apple
-	open_group.GET("/beans/trending", getBeansHandler)
+	// // GET /beans/trending?window=1&keyword=amazon&keyword=apple
+	// open_group.GET("/beans/trending", getBeansHandler)
 	// GET /beans/search?window=1
 	// query_texts: []string
 	// similarity_text: string
 	open_group.GET("/beans/search", searchBeansHandler)
-	// GET /topics/trending?window=1
-	open_group.GET("/topics/trending", getTrendingTopicsHandler)
+	// // GET /topics/trending?window=1
+	// open_group.GET("/topics/trending", getTrendingTopicsHandler)
 	// GET /nuggets/trending?window=1
 	open_group.GET("/nuggets/trending", getTrendingNuggetsHandler)
 

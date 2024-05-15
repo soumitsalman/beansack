@@ -3,7 +3,7 @@ use("beansack");
 
 // collections
 db.getCollection("beans").countDocuments({});
-db.getCollection("keywords").countDocuments({});
+db.getCollection("concepts").countDocuments({});
 db.getCollection("medianoise").countDocuments({});
 db.getCollection("digests").countDocuments({});
 
@@ -56,18 +56,28 @@ db.runCommand(
   }
 );
 
-
 // scalar index - these need to exist if i want to use these as filters in vector search
-db.getCollection("beans").createIndex(
+db.beans.createIndex(
   {
     updated: -1, // latest stuff should be at the top
-    keywords: 1 // although this may seem like it should be "text", that doesnt work for vector search 
+    kind: 1 // although this may seem like it should be "text", that doesnt work for vector search 
   },
   {
-    name: "updated_and_keywords"
+    name: "beans_scalar_search"
   }
-)
-db.getCollection("beans").createIndex({kind:1})
+);
+
+db.beans.createIndex(
+  {
+      title: "text",
+      summary: "text",
+      topic: "text",        
+      keywords: "text"
+  },
+  {
+      name: "beans_text_search"
+  }
+);
 
 // INDEXES FOR CONCEPTS/NEWS NUGGETS
 // text searching news nuggets
@@ -78,6 +88,17 @@ db.concepts.createIndex(
   },
   {
       name: "concept_text_search"
+  }
+);
+
+// Create a new index in the collection.
+db.concepts.createIndex(
+  {
+    updated: -1,
+    match_count: -1
+  }, 
+  {
+    name: "concept_scalar_search"
   }
 );
 

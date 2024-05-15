@@ -6,10 +6,9 @@ import (
 	"log"
 	"strings"
 
-	"github.com/soumitsalman/beansack/nlp/internal"
+	internal "github.com/soumitsalman/beansack/nlp/utils"
 	datautils "github.com/soumitsalman/data-utils"
 	"github.com/tmc/langchaingo/llms/openai"
-	"github.com/tmc/langchaingo/textsplitter"
 )
 
 const (
@@ -55,7 +54,7 @@ var (
 type GoParrotboxClient struct {
 	concept_chain *JsonValueExtraction
 	digest_chain  *JsonValueExtraction
-	splitter      textsplitter.TokenSplitter
+	// splitter      textsplitter.TokenSplitter
 }
 
 func NewGoParrotboxClient(api_key string) *GoParrotboxClient {
@@ -72,7 +71,7 @@ func NewGoParrotboxClient(api_key string) *GoParrotboxClient {
 	return &GoParrotboxClient{
 		concept_chain: NewJsonValueExtraction(client, _CONCEPTS_EXTRACTION_INSTRUCTION, _concepts_sample),
 		digest_chain:  NewJsonValueExtraction(client, _DIGEST_EXTRACTION_INSTRUCTION, _digest_sample),
-		splitter:      textsplitter.NewTokenSplitter(textsplitter.WithChunkSize(_MAX_CHUNK_SIZE), textsplitter.WithChunkOverlap(0)),
+		// splitter:      textsplitter.NewTokenSplitter(textsplitter.WithChunkSize(_MAX_CHUNK_SIZE), textsplitter.WithChunkOverlap(0)),
 	}
 }
 
@@ -85,7 +84,7 @@ func (client *GoParrotboxClient) ExtractDigests(texts []string) []Digest {
 	output := make([]Digest, 0, len(texts))
 	datautils.ForEach(texts, func(text *string) {
 		// retry for item. if it doesnt workout, insert dud so that the sequence is maintained and move on to the next item
-		res := internal.RetryOnFail(
+		res := internal.RateLimitRetry(
 			func() (Digest, error) {
 				result, err := client.digest_chain.Call(ctx.Background(), map[string]any{"input_text": *text})
 				if err != nil {
@@ -93,9 +92,8 @@ func (client *GoParrotboxClient) ExtractDigests(texts []string) []Digest {
 					// insert dud
 					return Digest{}, err
 				}
-				// log.Printf("[goparrotboxdriver | DEBUG ONLY] ExtractDigest succeed.")
 				return result["value"].(Digest), nil
-			}, internal.LONG_DELAY)
+			})
 		output = append(output, res)
 	})
 	return output
@@ -107,16 +105,15 @@ func (client *GoParrotboxClient) ExtractKeyConcepts(texts []string) []KeyConcept
 	datautils.ForEach(batches, func(batch *string) {
 		// retry for each batch
 		// if a batch doesnt workout, just move on to the next batch. No need to insert duds since no sequence need to be maintained
-		res := internal.RetryOnFail(
+		res := internal.RateLimitRetry(
 			func() ([]KeyConcept, error) {
 				result, err := client.concept_chain.Call(ctx.Background(), map[string]any{"input_text": batch})
 				if err != nil {
 					log.Println("[goparrotboxdriver] ExtractKeyConcepts failed.", err)
 					return nil, err
 				}
-				// log.Printf("[goparrotboxdriver | DEBUG ONLY] ExtractKeyConcepts succeed. %d\n", len(result["value"].([]KeyConcept)))
 				return result["value"].([]KeyConcept), nil
-			}, internal.LONG_DELAY)
+			})
 		if len(res) > 0 {
 			output = append(output, res...)
 		}
@@ -126,8 +123,8 @@ func (client *GoParrotboxClient) ExtractKeyConcepts(texts []string) []KeyConcept
 
 func (client *GoParrotboxClient) stuffAndBatchInput(texts []string) []string {
 	output := make([]string, 0, 1+(len(texts)/_BATCH_SIZE))
-	// truncate to _MAX_CHUNK_SIZE tokens
-	texts = internal.TruncateTextOnTokenCount(texts, client.splitter)
+	// // truncate to _MAX_CHUNK_SIZE tokens
+	// texts = internal.TruncateTextOnTokenCount(texts, client.splitter)
 	// a batch with truncated texts
 	for i := 0; i < len(texts); i += _BATCH_SIZE {
 		output = append(output, fmt.Sprintf("```\n%s\n```", strings.Join(datautils.SafeSlice(texts, i, i+_BATCH_SIZE), _BATCH_DELIMETER)))

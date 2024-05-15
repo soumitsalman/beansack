@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/soumitsalman/beansack/nlp/internal"
+	internal "github.com/soumitsalman/beansack/nlp/utils"
 	datautils "github.com/soumitsalman/data-utils"
-	"github.com/tmc/langchaingo/textsplitter"
 )
 
 const (
@@ -19,8 +18,8 @@ const (
 const (
 	// 4096 tokens is roughly 4/5 pages and is around 15 to 20 minutes reading time for a news or post
 	// Although the current embeddings-service model can take 8192, there is no functional reason to ingest that much content
-	_MAX_CHUNK_SIZE = 4096
-	_BASE_URL       = "https://embeddings-service.purplesea-08c513a7.eastus.azurecontainerapps.io/embed"
+	// _MAX_CHUNK_SIZE = 4096
+	_BASE_URL = "https://embeddings-service.purplesea-08c513a7.eastus.azurecontainerapps.io/embed"
 )
 
 type inferenceInput struct {
@@ -35,13 +34,13 @@ func (err EmbeddingServerError) Error() string {
 
 type EmbeddingsDriver struct {
 	embed_url string
-	splitter  textsplitter.TokenSplitter
+	// splitter  textsplitter.TokenSplitter
 }
 
 func NewEmbeddingsDriver() *EmbeddingsDriver {
 	return &EmbeddingsDriver{
 		embed_url: _BASE_URL,
-		splitter:  textsplitter.NewTokenSplitter(textsplitter.WithChunkSize(_MAX_CHUNK_SIZE), textsplitter.WithChunkOverlap(0)),
+		// splitter:  textsplitter.NewTokenSplitter(textsplitter.WithChunkSize(_MAX_CHUNK_SIZE), textsplitter.WithChunkOverlap(0)),
 	}
 }
 
@@ -60,11 +59,11 @@ func (driver *EmbeddingsDriver) CreateTextEmbeddings(text string, task_type stri
 }
 
 func (driver *EmbeddingsDriver) toEmbeddingInput(text, task_type string, is_large_text bool) string {
-	if is_large_text {
-		// split and truncate at the first chunk size
-		chunks, _ := driver.splitter.SplitText(text)
-		text = chunks[0]
-	}
+	// if is_large_text {
+	// 	// split and truncate at the first chunk size
+	// 	chunks, _ := driver.splitter.SplitText(text)
+	// 	text = chunks[0]
+	// }
 	// prefix with embedding type
 	if len(task_type) > 0 {
 		text = fmt.Sprintf("%s: %s", task_type, text)
@@ -73,7 +72,7 @@ func (driver *EmbeddingsDriver) toEmbeddingInput(text, task_type string, is_larg
 }
 
 func (driver *EmbeddingsDriver) createEmbeddings(input *inferenceInput) [][]float32 {
-	return internal.RetryOnFail(
+	return internal.Retry(
 		func() ([][]float32, error) {
 			if embs, err := internal.PostHTTPRequest[[][]float32](driver.embed_url, "", input); err != nil {
 				log.Printf("[EmbeddingsDriver] Embedding generation failed. %v\n", err)
@@ -85,6 +84,5 @@ func (driver *EmbeddingsDriver) createEmbeddings(input *inferenceInput) [][]floa
 			} else {
 				return embs, nil
 			}
-		},
-		internal.SHORT_DELAY)
+		})
 }

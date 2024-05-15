@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"time"
+
 	// "fmt"
 	"log"
 	"os"
@@ -66,11 +67,11 @@ func debug_main() {
 	// })
 
 	// trending nuggets
-	nuggets := sdk.GetTrendingNewsNuggets(2)
+	nuggets := sdk.TrendingNuggets(sdk.NewQueryOptions().WithTimeWindow(2))
 	datautils.ForEach(nuggets, func(item *sdk.NewsNugget) { log.Printf("%d | %s: %s\n", item.MatchCount, item.KeyPhrase, item.Event) })
 
 	// nugget search
-	beans := sdk.NuggetSearch([]string{"Cinterion cellular modems"}, sdk.WithTimeWindowFilter(2))
+	beans := sdk.NuggetSearch([]string{"Cinterion cellular modems"}, sdk.NewQueryOptions().WithTimeWindow(2))
 	datautils.ForEach(beans, func(item *sdk.Bean) {
 		log.Printf("[%s] %s | %s\n", item.Source, time.Unix(item.Updated, 0).Format(time.DateTime), item.Title)
 	})

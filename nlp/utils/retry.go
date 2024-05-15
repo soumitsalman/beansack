@@ -1,21 +1,43 @@
-package internal
+package utils
 
 import (
+	"regexp"
 	"time"
 
 	"github.com/avast/retry-go"
 	"github.com/go-resty/resty/v2"
-	datautils "github.com/soumitsalman/data-utils"
-	"github.com/tmc/langchaingo/textsplitter"
 )
 
 const (
-	SHORT_DELAY     = 10 * time.Millisecond
-	LONG_DELAY      = 10 * time.Second
-	_RETRY_ATTEMPTS = 3
+	SHORT_DELAY    = 10 * time.Millisecond
+	LONG_DELAY     = 10 * time.Second
+	RETRY_ATTEMPTS = 3
 )
 
-func RetryOnFail[T any](original_func func() (T, error), delay time.Duration) T {
+func RateLimitRetry[T any](original_func func() (T, error)) T {
+	var res T
+	var err error
+
+	retry.Do(
+		func() error {
+			if res, err = original_func(); err != nil {
+				// something went wrong with the function so try again
+				return err
+			}
+			// no error
+			return nil
+		},
+		retry.Delay(LONG_DELAY),
+		retry.Attempts(RETRY_ATTEMPTS),
+		retry.RetryIf(func(err error) bool {
+			res, err := regexp.MatchString("(?i)429.+Rate.+limit", err.Error())
+			return err == nil && res
+		}),
+	)
+	return res
+}
+
+func Retry[T any](original_func func() (T, error)) T {
 	var res T
 	var err error
 	// retry for each batch
@@ -28,8 +50,8 @@ func RetryOnFail[T any](original_func func() (T, error), delay time.Duration) T 
 			// no error
 			return nil
 		},
-		retry.Delay(delay),
-		retry.Attempts(_RETRY_ATTEMPTS),
+		retry.Delay(SHORT_DELAY),
+		retry.Attempts(RETRY_ATTEMPTS),
 	)
 	return res
 }
@@ -61,15 +83,8 @@ func PostHTTPRequestAndRetryOnFail[T any](url, auth_token string, input any) T {
 			// no error
 			return err
 		},
-		retry.Attempts(_RETRY_ATTEMPTS),
-		retry.Delay(LONG_DELAY),
+		retry.Attempts(RETRY_ATTEMPTS),
+		retry.Delay(SHORT_DELAY),
 	)
 	return result
-}
-
-func TruncateTextOnTokenCount(texts []string, splitter textsplitter.TokenSplitter) []string {
-	return datautils.Transform(texts, func(text *string) string {
-		chunks, _ := splitter.SplitText(*text)
-		return chunks[0]
-	})
 }
