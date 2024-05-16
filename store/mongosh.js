@@ -102,6 +102,11 @@ db.concepts.createIndex(
   }
 );
 
+db.concepts.createIndex(
+  { mapped_urls: 1 }, 
+  { name: "concept_scalar_search_url"}
+);
+
 db.runCommand(
   {
     "createIndexes": "concepts",

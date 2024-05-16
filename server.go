@@ -39,6 +39,36 @@ type bodyParams struct {
 	Context    string      `json:"context,omitempty"`
 }
 
+func extractParams(ctx *gin.Context) (*sdk.SearchOptions, []string) {
+	options := sdk.NewQueryOptions()
+
+	var query_params queryParams
+	// if query params are mal-formed return error
+	if ctx.ShouldBindQuery(&query_params) != nil {
+		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
+		return nil, nil
+	}
+	if len(query_params.Kinds) > 0 {
+		options.WithKind(query_params.Kinds)
+	}
+	if query_params.Window > 0 {
+		options.WithTimeWindow(query_params.Window)
+	}
+	if query_params.TopN > 0 {
+		options.WithTopN(query_params.TopN)
+	}
+
+	var body_params bodyParams
+	// if body params are provided, assign them or else proceed without them
+	if ctx.ShouldBindJSON(&body_params) == nil {
+
+		options.CategoryTexts = body_params.Categories
+		options.CategoryEmbeddings = body_params.Embeddings
+		options.Context = body_params.Context
+	}
+	return options, body_params.Nuggets
+}
+
 func newBeansHandler(ctx *gin.Context) {
 	var beans []sdk.Bean
 	if ctx.BindJSON(&beans) != nil {
@@ -49,52 +79,25 @@ func newBeansHandler(ctx *gin.Context) {
 	}
 }
 
-// func getBeansHandler(ctx *gin.Context) {
-// 	filters := extractQueryParams(ctx)
-// 	if filters == nil {
-// 		return
-// 	}
-
-// 	res := sdk.GetBeans(filters...)
-// 	sendBeans(res, ctx)
-// }
-
 func searchBeansHandler(ctx *gin.Context) {
-	options := extractQueryParams(ctx)
+	options, nuggets := extractParams(ctx)
 	if options == nil {
 		return
 	}
-	var body_params bodyParams
-	if ctx.ShouldBindJSON(&body_params) != nil {
-		log.Println("[server] The body is malformed.")
-	} else {
-		// just blindly assign both. The sdk function will arbitrate
-		options.SearchCategories = body_params.Categories
-		options.SearchEmbeddings = body_params.Embeddings
-		options.SearchContext = body_params.Context
-	}
 
 	var res []sdk.Bean
-	if len(body_params.Nuggets) > 0 {
-		res = sdk.NuggetSearch(body_params.Nuggets, options)
+	if len(nuggets) > 0 {
+		res = sdk.NuggetSearch(nuggets, options)
 	} else {
-		res = sdk.VectorSearch(options)
+		res = sdk.FuzzySearchBeans(options)
 	}
 	sendBeans(res, ctx)
 }
 
-func getTrendingNuggetsHandler(ctx *gin.Context) {
-	options := extractQueryParams(ctx)
+func trendingNuggetsHandler(ctx *gin.Context) {
+	options, _ := extractParams(ctx)
 	if options == nil {
 		return
-	}
-	var body_params bodyParams
-	if ctx.ShouldBindJSON(&body_params) != nil {
-		log.Println("[server] The body is malformed.")
-	} else {
-		// just blindly assign both. The sdk function will arbitrate
-		options.SearchCategories = body_params.Categories
-		options.SearchEmbeddings = body_params.Embeddings
 	}
 	ctx.JSON(http.StatusOK, sdk.TrendingNuggets(options))
 }
@@ -122,25 +125,6 @@ func initializeRateLimiter() gin.HandlerFunc {
 			ctx.AbortWithStatus(http.StatusTooManyRequests)
 		}
 	}
-}
-
-func extractQueryParams(ctx *gin.Context) *sdk.SearchOptions {
-	var query_params queryParams
-	if ctx.ShouldBindQuery(&query_params) != nil {
-		ctx.String(http.StatusBadRequest, _ERROR_MESSAGE)
-		return nil
-	}
-	options := sdk.NewQueryOptions()
-	if len(query_params.Kinds) > 0 {
-		options.WithKind(query_params.Kinds)
-	}
-	if query_params.Window > 0 {
-		options.WithTimeWindow(query_params.Window)
-	}
-	if query_params.TopN > 0 {
-		options.WithTopN(query_params.TopN)
-	}
-	return options
 }
 
 func sendBeans(res []sdk.Bean, ctx *gin.Context) {
@@ -173,7 +157,7 @@ func newServer() *gin.Engine {
 	// // GET /topics/trending?window=1
 	// open_group.GET("/topics/trending", getTrendingTopicsHandler)
 	// GET /nuggets/trending?window=1
-	open_group.GET("/nuggets/trending", getTrendingNuggetsHandler)
+	open_group.GET("/nuggets/trending", trendingNuggetsHandler)
 
 	return router
 }

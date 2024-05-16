@@ -25,8 +25,8 @@ const (
 	_DELETE_WINDOW = 15
 
 	// vector and text search filters
-	_DEFAULT_CATEGORY_MATCH_SCORE = 0.67
-	_DEFAULT_CONTEXT_MATCH_SCORE  = 0.62
+	_DEFAULT_CATEGORY_MATCH_SCORE = 0.7
+	_DEFAULT_CONTEXT_MATCH_SCORE  = 0.55
 	_DEFAULT_TEXT_MATCH_SCORE     = 10
 )
 
@@ -96,11 +96,89 @@ func InitializeBeanSack(db_conn_str, parrotbox_auth_token string) error {
 }
 
 func TextSearch(keywords []string, settings *SearchOptions) []Bean {
-	return attachMediaNoises(beanstore.TextSearch(keywords,
-		store.WithTextFilter(settings.Filter),
-		store.WithProjection(_PROJECTION_FIELDS),
-		store.WithMinSearchScore(_DEFAULT_TEXT_MATCH_SCORE),
-		store.WithTextTopN(settings.TopN)))
+	return attachMediaNoises(
+		beanstore.TextSearch(keywords,
+			store.WithTextFilter(settings.Filter),
+			store.WithProjection(_PROJECTION_FIELDS),
+			store.WithTextTopN(settings.TopN)))
+}
+
+// fuzzy search modes
+const (
+	_GET            = 0
+	_TEXT           = 1
+	_VECTOR         = 2
+	_VECTOR_OR_TEXT = 3
+)
+
+// Searches beans based on search options
+// Algorithm:
+//  1. Look for category embeddings in input. If so, category search with that
+//  2. If NO category embeddings are found then create embeddings from category texts and search with those
+//  3. If NO category texts are found then create embeddings from the conversational context and search with that
+//     3.ALT. If context search does not return a value to a TextSearch
+//  4. If NO vector input is available just do a regular search
+func FuzzySearchBeans(options *SearchOptions) []Bean {
+	mode, embs, vec_field, min_score, keywords := getFuzzySearchMode(options)
+	var beans []Bean
+
+	switch mode {
+	case _GET:
+		beans = beanstore.Get(
+			options.Filter,
+			_PROJECTION_FIELDS,
+			store.JSON{"updated": -1},
+			options.TopN)
+	case _TEXT:
+		beans = TextSearch(keywords, options)
+	case _VECTOR:
+		beans = beanstore.VectorSearch(
+			embs,
+			vec_field,
+			store.WithVectorFilter(options.Filter),
+			store.WithProjection(_PROJECTION_FIELDS),
+			store.WithMinSearchScore(min_score),
+			store.WithVectorTopN(options.TopN))
+	case _VECTOR_OR_TEXT:
+		beans = beanstore.VectorSearch(
+			embs,
+			vec_field,
+			store.WithVectorFilter(options.Filter),
+			store.WithProjection(_PROJECTION_FIELDS),
+			store.WithMinSearchScore(min_score),
+			store.WithVectorTopN(options.TopN))
+		// vector search score is too restrictive for the embeddings model
+		// do a text search and return the top 2 as sample
+		if len(beans) <= 0 {
+			options.TopN = 2
+			beans = TextSearch(keywords, options)
+		}
+	}
+	return attachMediaNoises(beans)
+}
+
+// gets parameters for fuzzy search.
+// the outputs are: search_mode, embeddings (if applicable), vector_field (if applicable), min_vector_search_score, keywords (if applicable)
+func getFuzzySearchMode(options *SearchOptions) (int, [][]float32, string, float64, []string) {
+	var embs [][]float32
+
+	if len(options.CategoryEmbeddings) > 0 {
+		// no need to generate embeddings. search for CATEGORIES defined by these
+		return _VECTOR, options.CategoryEmbeddings, _CATEGORY_EMB, _DEFAULT_CATEGORY_MATCH_SCORE, []string{""}
+	} else if len(options.CategoryTexts) > 0 {
+		// generate embeddings for these categories
+		log.Printf("[beanops] Generating embeddings for %d categories.\n", len(options.CategoryTexts))
+		embs = emb_client.CreateBatchTextEmbeddings(options.CategoryTexts, embeddings.CATEGORIZATION)
+		return _VECTOR_OR_TEXT, embs, _CATEGORY_EMB, _DEFAULT_CATEGORY_MATCH_SCORE, options.CategoryTexts
+	} else if len(options.Context) > 0 {
+		// generate embeddings for the context and search using SEARCH EMBEDDINGS
+		log.Println("[beanops] Generating embeddings for:", options.Context)
+		embs = [][]float32{emb_client.CreateTextEmbeddings(options.Context, embeddings.SEARCH_QUERY)}
+		return _VECTOR_OR_TEXT, embs, _SEARCH_EMB, _DEFAULT_CONTEXT_MATCH_SCORE, []string{options.Context}
+	} else {
+		log.Println("[beanops] No `vector search` parameter defined.")
+		return _GET, nil, "", 0, nil // none of the other parameters matter
+	}
 }
 
 func NuggetSearch(nuggets []string, settings *SearchOptions) []Bean {
@@ -133,70 +211,64 @@ func NuggetSearch(nuggets []string, settings *SearchOptions) []Bean {
 	return attachMediaNoises(beans)
 }
 
-func VectorSearch(options *SearchOptions) []Bean {
-	var embs [][]float32
-	var vec_field = _CATEGORY_EMB
-	var min_score = _DEFAULT_CATEGORY_MATCH_SCORE
-
-	if len(options.SearchEmbeddings) > 0 {
-		// no need to generate embeddings. search for CATEGORIES defined by these
-		embs = options.SearchEmbeddings
-	} else if len(options.SearchCategories) > 0 {
-		// generate embeddings for these categories
-		log.Printf("[dbops] Generating embeddings for %d categories.\n", len(options.SearchCategories))
-		embs = emb_client.CreateBatchTextEmbeddings(options.SearchCategories, embeddings.CATEGORIZATION)
-	} else if len(options.SearchContext) > 0 {
-		// generate embeddings for the context and search using SEARCH EMBEDDINGS
-		log.Println("[dbops] Generating embeddings for:", options.SearchContext)
-		embs = [][]float32{emb_client.CreateTextEmbeddings(options.SearchContext, embeddings.SEARCH_QUERY)}
-		vec_field, min_score = _SEARCH_EMB, _DEFAULT_CONTEXT_MATCH_SCORE
-	} else {
-		log.Println("[beanops] No `search` parameter defined.")
+// Finds the trending news nuggets defined by the search parameter such as: by the day/week, by category match
+// Algorithm:
+//  0. (Optional) Find all the nuggets in that day/week and get their urls
+//  1. Match all the beans irrespective of updated: 0/1 within the category match threshold
+//  2. Find the nuggets that has those URLs as mapped urls for that day
+//  3. Stack rank them by trend score
+func TrendingNuggets(options *SearchOptions) []NewsNugget {
+	// 0. Find all nuggets in that day/week
+	nugget_filter := store.JSON{
+		"match_count": store.JSON{"$gte": 1}, // this a minimum
+	}
+	if updated, ok := options.Filter["updated"]; ok {
+		nugget_filter["updated"] = updated
+	}
+	initial_urls := make([]string, 0, 10) //default initialization
+	datautils.ForEach(
+		nuggetstore.Get(nugget_filter, store.JSON{"mapped_urls": 1}, nil, -1),
+		func(item *NewsNugget) { initial_urls = append(initial_urls, item.BeanUrls...) })
+	// there is nothing for the day
+	if len(initial_urls) <= 0 {
 		return nil
 	}
-	beans := beanstore.VectorSearch(
-		embs,
-		vec_field,
-		store.WithVectorFilter(options.Filter),
-		store.WithProjection(_PROJECTION_FIELDS),
-		store.WithMinSearchScore(min_score),
-		store.WithVectorTopN(options.TopN))
-	return attachMediaNoises(beans)
+	log.Println(len(initial_urls))
+
+	// 1. Match the all beans irrespective of updated: 0/1 within category match
+	beans_options := *options
+	beans_options.Filter = store.JSON{"url": store.JSON{"$in": initial_urls}}
+	beans_options.TopN = len(initial_urls) // look for all the items that match and dont shorten to only user provided topN just yet
+	matched_urls := datautils.Transform(FuzzySearchBeans(&beans_options), func(item *Bean) string { return item.Url })
+	// there is nothing that matches the categories
+	if len(matched_urls) <= 0 {
+		return nil
+	}
+	log.Println(len(matched_urls))
+
+	// 2. Find the nuggets that has those URLs as mapped urls for that day
+	// 3. Stack rank them by trend score
+	nugget_filter["mapped_urls"] = store.JSON{"$in": matched_urls} // now find the ones with matched urls
+	return nuggetstore.Get(
+		nugget_filter,
+		store.JSON{
+			"embeddings":  0,
+			"mapped_urls": 0,
+			"_id":         0,
+		},
+		store.JSON{"match_count": -1}, // stack rank by trend score
+		options.TopN,                  // now add the topN provided by user
+	)
 }
 
-func TrendingNuggets(query *SearchOptions) []NewsNugget {
-	query.Filter["match_count"] = store.JSON{"$gte": 1}
-	projection := store.JSON{
-		"embeddings":  0,
-		"mapped_urls": 0,
-		"_id":         0,
-	}
-	sort_by := store.JSON{"match_count": -1}
-
-	if len(query.SearchEmbeddings) > 0 {
-		return nuggetstore.VectorSearch(
-			query.SearchEmbeddings,
-			"embeddings",
-			store.WithMinSearchScore(_DEFAULT_NUGGET_MATCH_SCORE),
-			store.WithVectorFilter(query.Filter),
-			store.WithProjection(projection),
-			store.WithVectorTopN(query.TopN),
-			store.WithSortBy(sort_by),
-		)
-	} else if len(query.SearchCategories) > 0 {
-		log.Printf("[beanops] Creating embeddings for %d categories.\n", len(query.SearchCategories))
-		return nuggetstore.VectorSearch(
-			emb_client.CreateBatchTextEmbeddings(query.SearchCategories, embeddings.CATEGORIZATION),
-			"embeddings",
-			store.WithMinSearchScore(_DEFAULT_NUGGET_MATCH_SCORE),
-			store.WithVectorFilter(query.Filter),
-			store.WithProjection(projection),
-			store.WithVectorTopN(query.TopN),
-			store.WithSortBy(sort_by),
-		)
-	} else {
-		return nuggetstore.Get(query.Filter, projection, sort_by, query.TopN)
-	}
+// Returns the trending news/posts defined by the search parameter such as: by the day/week, by category match
+// Algorithm:
+//  1. Find all the news/posts for that day that matches the categories (match everything if there is no category)
+//  2. Find the nuggets that are mapped to these articles
+//  3. Take the highest nugget trend score and assign to the respective article
+//  4. Stack rank the news/posts by that trend score
+func TrendingBeans(options *SearchOptions) []Bean {
+	return nil
 }
 
 func attachMediaNoises(beans []Bean) []Bean {
