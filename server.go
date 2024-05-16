@@ -185,6 +185,8 @@ func main() {
 	if err := sdk.InitializeBeanSack(getDBConnectionString(), getLLMServiceAPIKey()); err != nil {
 		log.Fatalln("Initialization not working", err)
 	}
+	// introduce an ENV VAR so that it can run as either CDN or INDEXER
+
 	newServer().Run()
 	// debug line
 	// debug_main()

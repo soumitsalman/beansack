@@ -68,7 +68,7 @@ func debug_main() {
 
 	// trending nuggets
 	nuggets := sdk.TrendingNuggets(sdk.NewQueryOptions().WithTimeWindow(2))
-	datautils.ForEach(nuggets, func(item *sdk.NewsNugget) { log.Printf("%d | %s: %s\n", item.MatchCount, item.KeyPhrase, item.Event) })
+	datautils.ForEach(nuggets, func(item *sdk.NewsNugget) { log.Printf("%d | %s: %s\n", item.Score, item.KeyPhrase, item.Event) })
 
 	// nugget search
 	beans := sdk.NuggetSearch([]string{"Cinterion cellular modems"}, sdk.NewQueryOptions().WithTimeWindow(2))

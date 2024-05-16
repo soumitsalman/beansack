@@ -11,7 +11,6 @@ const (
 )
 
 type Bean struct {
-	ID         string      `json:"_id,omitempty" bson:"_id,omitempty"`         // this the same as URL
 	Url        string      `json:"url,omitempty" bson:"url,omitempty"`         // this is unique across each item regardless of the source and will be used as ID
 	Updated    int64       `json:"updated,omitempty" bson:"updated,omitempty"` // date of update of the post or comment. Empty for subreddits
 	Source     string      `json:"source,omitempty" bson:"source,omitempty"`   // which social media source is this coming from
@@ -60,7 +59,7 @@ type NewsNugget struct {
 	Description string    `json:"description" bson:"description,omitempty" jsonschema_description:"A concise summary of the 'event' associated to the 'keyphrase'"`
 	Embeddings  []float32 `json:"-,omitempty" bson:"embeddings,omitempty"`
 	Updated     int64     `json:"updated,omitempty" bson:"updated,omitempty"`
-	MatchCount  int       `json:"match_count,omitempty" bson:"match_count,omitempty"`
+	Score       int       `json:"match_count,omitempty" bson:"match_count,omitempty"`
 	BeanUrls    []string  `json:"mapped_urls,omitempty" bson:"mapped_urls,omitempty"`
 }
 
