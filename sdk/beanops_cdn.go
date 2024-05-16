@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"log"
+	"sort"
 
 	"github.com/soumitsalman/beansack/nlp/embeddings"
 	"github.com/soumitsalman/beansack/nlp/parrotbox"
@@ -27,7 +28,6 @@ const (
 	// vector and text search filters
 	_DEFAULT_CATEGORY_MATCH_SCORE = 0.7
 	_DEFAULT_CONTEXT_MATCH_SCORE  = 0.55
-	_DEFAULT_TEXT_MATCH_SCORE     = 10
 )
 
 var (
@@ -70,6 +70,14 @@ var (
 	_SORT_BY_UPDATED = store.JSON{"updated": -1}
 )
 
+// fuzzy search modes
+const (
+	_GET            = 0
+	_TEXT           = 1
+	_VECTOR         = 2
+	_VECTOR_OR_TEXT = 3
+)
+
 type BeanSackError string
 
 func (err BeanSackError) Error() string {
@@ -102,14 +110,6 @@ func TextSearch(keywords []string, settings *SearchOptions) []Bean {
 			store.WithProjection(_PROJECTION_FIELDS),
 			store.WithTextTopN(settings.TopN)))
 }
-
-// fuzzy search modes
-const (
-	_GET            = 0
-	_TEXT           = 1
-	_VECTOR         = 2
-	_VECTOR_OR_TEXT = 3
-)
 
 // Searches beans based on search options
 // Algorithm:
@@ -161,7 +161,6 @@ func FuzzySearchBeans(options *SearchOptions) []Bean {
 // the outputs are: search_mode, embeddings (if applicable), vector_field (if applicable), min_vector_search_score, keywords (if applicable)
 func getFuzzySearchMode(options *SearchOptions) (int, [][]float32, string, float64, []string) {
 	var embs [][]float32
-
 	if len(options.CategoryEmbeddings) > 0 {
 		// no need to generate embeddings. search for CATEGORIES defined by these
 		return _VECTOR, options.CategoryEmbeddings, _CATEGORY_EMB, _DEFAULT_CATEGORY_MATCH_SCORE, []string{""}
@@ -268,7 +267,54 @@ func TrendingNuggets(options *SearchOptions) []NewsNugget {
 //  3. Take the highest nugget trend score and assign to the respective article
 //  4. Stack rank the news/posts by that trend score
 func TrendingBeans(options *SearchOptions) []Bean {
-	return nil
+	//  1. Find all the news/posts for that day that matches the categories (match everything if there is no category)
+	beans := FuzzySearchBeans(options)
+
+	//  2. Find the nuggets that are mapped to these articles
+	urls := datautils.Transform(beans, func(item *Bean) string { return item.Url })
+	nuggets := nuggetstore.Aggregate([]store.JSON{
+		{
+			"$match": store.JSON{
+				"mapped_urls": store.JSON{"$in": urls},
+			},
+		},
+		{
+			"$sort": store.JSON{"match_count": -1},
+		},
+		{
+			"$unwind": "$mapped_urls",
+		},
+		{
+			"$project": store.JSON{
+				"match_count": 1,
+				"url":         "$mapped_urls",
+			},
+		},
+		{
+			"$group": store.JSON{
+				"_id": "$url",
+				// HACK: using keywords as a holder for $url is a hack
+				"keyphrase":   store.JSON{"$first": "$url"},
+				"match_count": store.JSON{"$first": "$match_count"},
+			},
+		},
+	})
+
+	// if no nugget was found just return based on search score of the beans
+	if len(nuggets) > 0 {
+		//  3. Take the highest nugget trend score and assign to the respective article
+		beans = datautils.ForEach(beans, func(bn *Bean) {
+			i := datautils.IndexAny(nuggets, func(nug *NewsNugget) bool { return bn.Url == nug.KeyPhrase })
+			if i >= 0 {
+				bn.SearchScore = float64(nuggets[i].TrendScore)
+			}
+		})
+
+		//  4. Stack rank the news/posts by that trend score
+		sort.Slice(beans, func(i, j int) bool { return beans[i].SearchScore > beans[j].SearchScore })
+		beans = datautils.SafeSlice(beans, 0, options.TopN)
+	}
+	return attachMediaNoises(beans)
 }
 
 func attachMediaNoises(beans []Bean) []Bean {

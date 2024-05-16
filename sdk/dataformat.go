@@ -59,7 +59,7 @@ type NewsNugget struct {
 	Description string    `json:"description" bson:"description,omitempty" jsonschema_description:"A concise summary of the 'event' associated to the 'keyphrase'"`
 	Embeddings  []float32 `json:"-,omitempty" bson:"embeddings,omitempty"`
 	Updated     int64     `json:"updated,omitempty" bson:"updated,omitempty"`
-	Score       int       `json:"match_count,omitempty" bson:"match_count,omitempty"`
+	TrendScore  int       `json:"match_count,omitempty" bson:"match_count,omitempty"`
 	BeanUrls    []string  `json:"mapped_urls,omitempty" bson:"mapped_urls,omitempty"`
 }
 

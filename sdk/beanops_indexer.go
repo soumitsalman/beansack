@@ -16,8 +16,9 @@ const (
 	// content length for processing for NLP driver
 	_MIN_TEXT_LENGTH = 20
 	// rectification
-	_RECT_BATCH_SIZE            = 10
-	_DEFAULT_NUGGET_MATCH_SCORE = 0.73
+	_RECT_BATCH_SIZE                 = 10
+	_DEFAULT_NUGGET_MATCH_SCORE      = 0.73
+	_DEFAULT_NUGGET_TEXT_MATCH_SCORE = 10
 )
 
 var _GENERATED_FIELDS = []string{_CATEGORY_EMB, _SEARCH_EMB, _SUMMARY}
@@ -204,15 +205,15 @@ func rectifyNuggetMapping() {
 		if len(beans) == 0 {
 			beans = beanstore.TextSearch([]string{km.KeyPhrase, km.Event},
 				store.WithTextFilter(non_channels),
-				store.WithMinSearchScore(_DEFAULT_TEXT_MATCH_SCORE),
+				store.WithMinSearchScore(_DEFAULT_NUGGET_TEXT_MATCH_SCORE),
 				store.WithTextTopN(2), // i might have to change this
 				store.WithProjection(url_fields))
 		}
 		// get media noises and add up the score to reflect in the Nugget Score
 
 		return NewsNugget{
-			Score:    calculateNuggetScore(beans), // score = 5 x number_of_unique_urls + sum (noise_score)
-			BeanUrls: datautils.Transform(beans, func(item *Bean) string { return item.Url }),
+			TrendScore: calculateNuggetScore(beans), // score = 5 x number_of_unique_urls + sum (noise_score)
+			BeanUrls:   datautils.Transform(beans, func(item *Bean) string { return item.Url }),
 		}
 	})
 	// log.Println(updates)

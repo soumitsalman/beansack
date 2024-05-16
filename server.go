@@ -94,6 +94,14 @@ func searchBeansHandler(ctx *gin.Context) {
 	sendBeans(res, ctx)
 }
 
+func trendingBeansHandler(ctx *gin.Context) {
+	options, _ := extractParams(ctx)
+	if options == nil {
+		return
+	}
+	ctx.JSON(http.StatusOK, sdk.TrendingBeans(options))
+}
+
 func trendingNuggetsHandler(ctx *gin.Context) {
 	options, _ := extractParams(ctx)
 	if options == nil {
@@ -148,14 +156,10 @@ func newServer() *gin.Engine {
 	// NO NEED FOR AUTH: this is open to public
 	open_group := router.Group("/")
 	open_group.Use(initializeRateLimiter())
-	// // GET /beans/trending?window=1&keyword=amazon&keyword=apple
-	// open_group.GET("/beans/trending", getBeansHandler)
+	// GET /beans/trending?window=1&keyword=amazon&keyword=apple
+	open_group.GET("/beans/trending", trendingBeansHandler)
 	// GET /beans/search?window=1
-	// query_texts: []string
-	// similarity_text: string
 	open_group.GET("/beans/search", searchBeansHandler)
-	// // GET /topics/trending?window=1
-	// open_group.GET("/topics/trending", getTrendingTopicsHandler)
 	// GET /nuggets/trending?window=1
 	open_group.GET("/nuggets/trending", trendingNuggetsHandler)
 
