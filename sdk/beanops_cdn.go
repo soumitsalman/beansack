@@ -168,7 +168,7 @@ func getFuzzySearchMode(options *SearchOptions) (int, [][]float32, string, float
 		// generate embeddings for these categories
 		log.Printf("[beanops] Generating embeddings for %d categories.\n", len(options.CategoryTexts))
 		embs = emb_client.CreateBatchTextEmbeddings(options.CategoryTexts, embeddings.CATEGORIZATION)
-		return _VECTOR_OR_TEXT, embs, _CATEGORY_EMB, _DEFAULT_CATEGORY_MATCH_SCORE, options.CategoryTexts
+		return _VECTOR, embs, _CATEGORY_EMB, _DEFAULT_CATEGORY_MATCH_SCORE, options.CategoryTexts
 	} else if len(options.Context) > 0 {
 		// generate embeddings for the context and search using SEARCH EMBEDDINGS
 		log.Println("[beanops] Generating embeddings for:", options.Context)

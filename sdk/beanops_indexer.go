@@ -50,6 +50,7 @@ func AddBeans(beans []Bean) error {
 	})
 
 	// now store the beans before processing them for generated fields
+	// for social media posts with media_noise update the update_time of the original post
 	beans, err := beanstore.Add(beans)
 	if err != nil {
 		log.Println(err)
