@@ -37,11 +37,14 @@ type EmbeddingsDriver struct {
 	// splitter  textsplitter.TokenSplitter
 }
 
-func NewEmbeddingsDriver() *EmbeddingsDriver {
-	return &EmbeddingsDriver{
+func NewEmbeddingsDriver(base_url string) *EmbeddingsDriver {
+	driver := &EmbeddingsDriver{
 		embed_url: _BASE_URL,
-		// splitter:  textsplitter.NewTokenSplitter(textsplitter.WithChunkSize(_MAX_CHUNK_SIZE), textsplitter.WithChunkOverlap(0)),
 	}
+	if len(base_url) > 0 {
+		driver.embed_url = base_url
+	}
+	return driver
 }
 
 func (driver *EmbeddingsDriver) CreateBatchTextEmbeddings(texts []string, task_type string) [][]float32 {

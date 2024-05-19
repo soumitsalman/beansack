@@ -1,26 +1,24 @@
-package main
+package examples
 
 import (
 	"log"
 	"os"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/soumitsalman/beansack/sdk"
 	datautils "github.com/soumitsalman/data-utils"
 )
 
-func main() {
-	godotenv.Load()
+func Search() {
 	// initialize the services
-	if err := sdk.InitializeBeanSack(os.Getenv("DB_CONNECTION_STRING"), os.Getenv("LLMSERVICE_API_KEY")); err != nil {
+	if err := sdk.InitializeBeanSack(os.Getenv("DB_CONNECTION_STRING"), os.Getenv("EMB_BASE_URL"), os.Getenv("LLMSERVICE_API_KEY")); err != nil {
 		log.Fatalln("initialization not working", err)
 	}
 
 	// search and query
 	var beans []sdk.Bean
 	// test vector search
-	beans = sdk.FuzzySearchBeans(&sdk.SearchOptions{CategoryTexts: []string{"Russia's longest-serving minister, has been removed as defence minister by President Vladimir Putin"}})
+	beans = sdk.FuzzySearch(&sdk.SearchOptions{CategoryTexts: []string{"Russia's longest-serving minister, has been removed as defence minister by President Vladimir Putin"}})
 	datautils.ForEach(beans, func(item *sdk.Bean) { log.Printf("%f | %s\n", item.SearchScore, item.Title) })
 
 	// test text search

@@ -5,17 +5,8 @@ import (
 	"sort"
 
 	"github.com/soumitsalman/beansack/nlp/embeddings"
-	"github.com/soumitsalman/beansack/nlp/parrotbox"
 	"github.com/soumitsalman/beansack/store"
 	datautils "github.com/soumitsalman/data-utils"
-)
-
-const (
-	BEANSACK    = "beansack"
-	BEANS       = "beans"
-	NOISES      = "noises"
-	KEYWORDS    = "keywords"
-	NEWSNUGGETS = "concepts"
 )
 
 // default configurations
@@ -28,20 +19,6 @@ const (
 	// vector and text search filters
 	_DEFAULT_CATEGORY_MATCH_SCORE = 0.7
 	_DEFAULT_CONTEXT_MATCH_SCORE  = 0.55
-)
-
-var (
-	beanstore   *store.Store[Bean]
-	nuggetstore *store.Store[NewsNugget]
-	noisestore  *store.Store[MediaNoise]
-	emb_client  *embeddings.EmbeddingsDriver
-	pb_client   *parrotbox.GoParrotboxClient
-)
-
-const (
-	_SEARCH_EMB   = "search_embeddings"
-	_CATEGORY_EMB = "category_embeddings"
-	_SUMMARY      = "summary"
 )
 
 var (
@@ -78,37 +55,17 @@ const (
 	_VECTOR_OR_TEXT = 3
 )
 
-type BeanSackError string
-
-func (err BeanSackError) Error() string {
-	return string(err)
-}
-
-func InitializeBeanSack(db_conn_str, parrotbox_auth_token string) error {
-	beanstore = store.New(db_conn_str, BEANSACK, BEANS,
-		// store.WithMinSearchScore[Bean](0.55), // TODO: change this to 0.8 in future
-		// store.WithSearchTopN[Bean](10),
-		store.WithDataIDAndEqualsFunction(getBeanId, Equals),
-	)
-	noisestore = store.New[MediaNoise](db_conn_str, BEANSACK, NOISES)
-	nuggetstore = store.New[NewsNugget](db_conn_str, BEANSACK, NEWSNUGGETS)
-
-	if beanstore == nil || nuggetstore == nil {
-		return BeanSackError("Initialization Failed. db_conn_str Not working.")
-	}
-
-	pb_client = parrotbox.NewGoParrotboxClient(parrotbox_auth_token)
-	emb_client = embeddings.NewEmbeddingsDriver()
-
-	return nil
-}
-
 func TextSearch(keywords []string, settings *SearchOptions) []Bean {
-	return attachMediaNoises(
-		beanstore.TextSearch(keywords,
+	var beans []Bean
+	if settings == nil {
+		beans = beanstore.TextSearch(keywords, store.WithProjection(_PROJECTION_FIELDS))
+	} else {
+		beans = beanstore.TextSearch(keywords,
 			store.WithTextFilter(settings.Filter),
 			store.WithProjection(_PROJECTION_FIELDS),
-			store.WithTextTopN(settings.TopN)))
+			store.WithTextTopN(settings.TopN))
+	}
+	return attachMediaNoises(beans)
 }
 
 // Searches beans based on search options
@@ -118,7 +75,7 @@ func TextSearch(keywords []string, settings *SearchOptions) []Bean {
 //  3. If NO category texts are found then create embeddings from the conversational context and search with that
 //     3.ALT. If context search does not return a value to a TextSearch
 //  4. If NO vector input is available just do a regular search
-func FuzzySearchBeans(options *SearchOptions) []Bean {
+func FuzzySearch(options *SearchOptions) []Bean {
 	mode, embs, vec_field, min_score, keywords := getFuzzySearchMode(options)
 	var beans []Bean
 
@@ -237,7 +194,7 @@ func TrendingNuggets(options *SearchOptions) []NewsNugget {
 	beans_options := *options
 	beans_options.Filter = store.JSON{"url": store.JSON{"$in": initial_urls}}
 	beans_options.TopN = len(initial_urls) // look for all the items that match and dont shorten to only user provided topN just yet
-	matched_urls := datautils.Transform(FuzzySearchBeans(&beans_options), func(item *Bean) string { return item.Url })
+	matched_urls := datautils.Transform(FuzzySearch(&beans_options), func(item *Bean) string { return item.Url })
 	// there is nothing that matches the categories
 	if len(matched_urls) <= 0 {
 		return nil
@@ -266,7 +223,7 @@ func TrendingNuggets(options *SearchOptions) []NewsNugget {
 //  4. Stack rank the news/posts by that trend score
 func TrendingBeans(options *SearchOptions) []Bean {
 	//  1. Find all the news/posts for that day that matches the categories (match everything if there is no category)
-	beans := FuzzySearchBeans(options)
+	beans := FuzzySearch(options)
 
 	//  2. Find the nuggets that are mapped to these articles
 	urls := datautils.Transform(beans, func(item *Bean) string { return item.Url })
