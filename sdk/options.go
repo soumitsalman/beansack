@@ -19,7 +19,7 @@ type SearchOptions struct {
 	Context            string
 }
 
-func NewQueryOptions() *SearchOptions {
+func NewSearchOptions() *SearchOptions {
 	return &SearchOptions{
 		Filter: make(store.JSON),
 		TopN:   _DEFAULT_TOPN,

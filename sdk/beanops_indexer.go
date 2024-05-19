@@ -23,6 +23,22 @@ const (
 
 var _GENERATED_FIELDS = []string{_CATEGORY_EMB, _SEARCH_EMB, _SUMMARY}
 
+func Cleanup(delete_window int) {
+	delete_filter := store.JSON{
+		"updated": store.JSON{"$lte": timeValue(delete_window)},
+	}
+	// delete old stuff
+	beanstore.Delete(
+		datautils.AppendMaps(
+			delete_filter,
+			store.JSON{
+				"kind": store.JSON{"$ne": CHANNEL},
+			}),
+	)
+	noisestore.Delete(delete_filter)
+	nuggetstore.Delete(delete_filter)
+}
+
 func AddBeans(beans []Bean) error {
 	// remove items without a text body
 	beans = datautils.Filter(beans, func(item *Bean) bool { return len(item.Text) > _MIN_TEXT_LENGTH })
@@ -56,6 +72,8 @@ func AddBeans(beans []Bean) error {
 		log.Println(err)
 		return err
 	}
+	// TODO: if an item with the same url exists it will not get added but if it has a media noise it should get updated with the current updated date
+
 	// now store the medianoises. But no need to check for error since their storage is auxiliary for the overall experience
 	noisestore.Add(medianoises)
 
@@ -70,7 +88,7 @@ func generateCustomFields(beans []Bean, batch_update_time int64) {
 	// extract key news nuggets and add them to the store
 	generateNewsNuggets(getTextFields(beans), batch_update_time)
 	// run rectification and re-adjustment of all items that need updating
-	Rectify()
+	rectify()
 }
 
 func generateNewsNuggets(texts []string, batch_update_time int64) {
@@ -82,21 +100,7 @@ func generateNewsNuggets(texts []string, batch_update_time int64) {
 
 // this is for any recurring service
 // this is currently not being run as a recurring service
-func Rectify() {
-	delete_filter := store.JSON{
-		"updated": store.JSON{"$lte": timeValue(_DELETE_WINDOW)},
-	}
-	// delete old stuff
-	beanstore.Delete(
-		datautils.AppendMaps(
-			delete_filter,
-			store.JSON{
-				"kind": store.JSON{"$ne": CHANNEL},
-			}),
-	)
-	noisestore.Delete(delete_filter)
-	nuggetstore.Delete(delete_filter)
-
+func rectify() {
 	// BEANS: generate the fields that do not exist
 	for _, field_name := range _GENERATED_FIELDS {
 		beans := beanstore.Get(

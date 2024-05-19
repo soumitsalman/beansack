@@ -232,7 +232,6 @@ func TrendingNuggets(options *SearchOptions) []NewsNugget {
 	if len(initial_urls) <= 0 {
 		return nil
 	}
-	log.Println(len(initial_urls))
 
 	// 1. Match the all beans irrespective of updated: 0/1 within category match
 	beans_options := *options
@@ -243,7 +242,6 @@ func TrendingNuggets(options *SearchOptions) []NewsNugget {
 	if len(matched_urls) <= 0 {
 		return nil
 	}
-	log.Println(len(matched_urls))
 
 	// 2. Find the nuggets that has those URLs as mapped urls for that day
 	// 3. Stack rank them by trend score
