@@ -3,7 +3,6 @@ package nlp
 import (
 	"encoding/json"
 	"log"
-	"reflect"
 	"strings"
 
 	"github.com/invopop/jsonschema"
@@ -58,7 +57,7 @@ func (p JsonOutputParser[T]) ParseT(text string) (T, error) {
 
 		err := json.Unmarshal([]byte(json_text), &parsed)
 		if err != nil {
-			log.Printf("[%s] Failed unmarshalling. %v", p.Type(), err)
+			log.Printf("[%s] Failed unmarshalling. %s", p.Type(), json_text)
 			return parsed, err
 		}
 	}
@@ -84,5 +83,5 @@ func (p JsonOutputParser[T]) GetFormatInstructions() string {
 
 // Type returns the type of the output parser.
 func (p JsonOutputParser[T]) Type() string {
-	return "json_output_parser_" + reflect.TypeFor[T]().Name()
+	return "json_output_parser"
 }

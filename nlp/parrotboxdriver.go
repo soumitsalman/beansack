@@ -2,7 +2,6 @@ package nlp
 
 import (
 	ctx "context"
-	"fmt"
 	"log"
 	"strings"
 
@@ -37,8 +36,8 @@ func NewParrotboxClient(api_key string) *ParrotboxClient {
 		return nil
 	}
 	return &ParrotboxClient{
-		concepts_chain: NewJsonValueExtraction(client, _CONCEPTS_SAMPLE_OUTPUT),
-		digest_chain:   NewJsonValueExtraction(client, _DIGEST_SAMPLE_OUTPUT),
+		concepts_chain: NewJsonValueExtraction(client, _CONCEPTS_SAMPLE_INPUT, &_CONCEPTS_SAMPLE_OUTPUT),
+		digest_chain:   NewJsonValueExtraction(client, _DIGEST_SAMPLE_INPUT, &_DIGEST_SAMPLE_OUTPUT),
 	}
 }
 
@@ -89,11 +88,11 @@ func (client *ParrotboxClient) ExtractKeyConcepts(texts []string) []KeyConcept {
 				}
 				// now check if there is an error. If there is server error the serverErrorRetry will try again
 				if err != nil {
-					log.Println("[goparrotboxdriver] ExtractKeyConcepts failed.")
+					log.Println("[goparrotboxdriver] ExtractKeyConcepts failed.", err)
 					// insert duds for this batch.
 					return nil, err
 				}
-				return result["value"].([]KeyConcept), nil
+				return result["value"].(KeyConceptList).Items, nil
 			})
 		if len(res) > 0 {
 			output = append(output, res...)
@@ -107,11 +106,10 @@ func (client *ParrotboxClient) ExtractKeyConcepts(texts []string) []KeyConcept {
 // for parser error try with the _RETRY_INSTRUCTION
 func retryIfParseError(chain *JsonValueExtraction, err error) (map[string]any, error) {
 	var result map[string]any
-	log.Println("[parrotboxdiver]", err)
 	// try once and send whatever the result is
 	if parse_err, ok := err.(ParseError); ok {
 		// this is ParserError. retry once
-		log.Println("[goparrotboxdriver] Retyring json format extraction.")
+		log.Println("[parrotboxdriver] Retyring json format extraction.")
 		// reassigning the result and err
 		result, err = chain.Call(
 			ctx.Background(),
@@ -133,5 +131,5 @@ func stuffAndBatchInput(texts []string) []string {
 			stuffAndBatchInput(texts[len(texts)/2:])...)
 	}
 	// it is within context window so just batch em up all together
-	return []string{fmt.Sprintf("```\n%s\n```", strings.Join(texts, _BATCH_DELIMETER))}
+	return []string{strings.Join(texts, _BATCH_DELIMETER)}
 }
