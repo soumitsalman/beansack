@@ -1,4 +1,4 @@
-package utils
+package nlp
 
 import (
 	"regexp"
@@ -14,7 +14,7 @@ const (
 	RETRY_ATTEMPTS = 3
 )
 
-func RateLimitRetry[T any](original_func func() (T, error)) T {
+func serverErrorRetry[T any](original_func func() (T, error)) T {
 	var res T
 	var err error
 
@@ -30,14 +30,15 @@ func RateLimitRetry[T any](original_func func() (T, error)) T {
 		retry.Delay(LONG_DELAY),
 		retry.Attempts(RETRY_ATTEMPTS),
 		retry.RetryIf(func(err error) bool {
-			res, err := regexp.MatchString("(?i)429.+Rate.+limit", err.Error())
+			// match for 503: Service Unavailable & 429: Rate limit
+			res, err := regexp.MatchString("(?i)(429:.+Rate.+limit|503: Service Unavailable)", err.Error())
 			return err == nil && res
 		}),
 	)
 	return res
 }
 
-func Retry[T any](original_func func() (T, error)) T {
+func retryT[T any](original_func func() (T, error)) T {
 	var res T
 	var err error
 	// retry for each batch
@@ -56,7 +57,7 @@ func Retry[T any](original_func func() (T, error)) T {
 	return res
 }
 
-func PostHTTPRequest[T any](url, auth_token string, input any) (T, error) {
+func postHTTPRequest[T any](url, auth_token string, input any) (T, error) {
 	var result T
 	req := resty.New().
 		SetHeader("Content-Type", "application/json").
@@ -74,12 +75,12 @@ func PostHTTPRequest[T any](url, auth_token string, input any) (T, error) {
 	return result, err
 }
 
-func PostHTTPRequestAndRetryOnFail[T any](url, auth_token string, input any) T {
+func postHTTPRequestAndRetryOnFail[T any](url, auth_token string, input any) T {
 	var result T
 	var err error
 	retry.Do(
 		func() error {
-			result, err = PostHTTPRequest[T](url, auth_token, input)
+			result, err = postHTTPRequest[T](url, auth_token, input)
 			// no error
 			return err
 		},

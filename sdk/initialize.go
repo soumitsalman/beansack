@@ -1,8 +1,7 @@
 package sdk
 
 import (
-	"github.com/soumitsalman/beansack/nlp/embeddings"
-	"github.com/soumitsalman/beansack/nlp/parrotbox"
+	"github.com/soumitsalman/beansack/nlp"
 	"github.com/soumitsalman/beansack/store"
 )
 
@@ -18,8 +17,8 @@ var (
 	beanstore   *store.Store[Bean]
 	nuggetstore *store.Store[NewsNugget]
 	noisestore  *store.Store[MediaNoise]
-	emb_client  *embeddings.EmbeddingsDriver
-	pb_client   *parrotbox.GoParrotboxClient
+	emb_client  *nlp.EmbeddingsDriver
+	pb_client   *nlp.ParrotboxClient
 )
 
 const (
@@ -47,8 +46,8 @@ func InitializeBeanSack(db_conn_str, emb_base_url string, pb_auth_token string) 
 		return BeanSackError("Initialization Failed. db_conn_str Not working.")
 	}
 
-	pb_client = parrotbox.NewGoParrotboxClient(pb_auth_token)
-	emb_client = embeddings.NewEmbeddingsDriver(emb_base_url)
+	pb_client = nlp.NewParrotboxClient(pb_auth_token)
+	emb_client = nlp.NewEmbeddingsDriver(emb_base_url)
 
 	return nil
 }

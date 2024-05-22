@@ -1,10 +1,9 @@
-package embeddings
+package nlp
 
 import (
 	"fmt"
 	"log"
 
-	internal "github.com/soumitsalman/beansack/nlp/utils"
 	datautils "github.com/soumitsalman/data-utils"
 )
 
@@ -19,7 +18,8 @@ const (
 	// 4096 tokens is roughly 4/5 pages and is around 15 to 20 minutes reading time for a news or post
 	// Although the current embeddings-service model can take 8192, there is no functional reason to ingest that much content
 	// _MAX_CHUNK_SIZE = 4096
-	_BASE_URL = "https://embeddings-service.purplesea-08c513a7.eastus.azurecontainerapps.io/embed"
+	_EMBEDDER_BASE_URL = "https://embeddings-service.purplesea-08c513a7.eastus.azurecontainerapps.io/embed"
+	_EMBEDDER_WINDOW   = 8191
 )
 
 type inferenceInput struct {
@@ -39,7 +39,7 @@ type EmbeddingsDriver struct {
 
 func NewEmbeddingsDriver(base_url string) *EmbeddingsDriver {
 	driver := &EmbeddingsDriver{
-		embed_url: _BASE_URL,
+		embed_url: _EMBEDDER_BASE_URL,
 	}
 	if len(base_url) > 0 {
 		driver.embed_url = base_url
@@ -48,26 +48,30 @@ func NewEmbeddingsDriver(base_url string) *EmbeddingsDriver {
 }
 
 func (driver *EmbeddingsDriver) CreateBatchTextEmbeddings(texts []string, task_type string) [][]float32 {
-	// TODO: automatically figure out input size based on tokens
-	input_texts := datautils.Transform(texts, func(item *string) string { return driver.toEmbeddingInput(*item, task_type, false) })
-	return driver.createEmbeddings(&inferenceInput{input_texts})
+	// if the count is over the window size split in half and try
+	if CountTokens(texts) > _EMBEDDER_WINDOW {
+		return append(
+			driver.CreateBatchTextEmbeddings(texts[:len(texts)/2], task_type),
+			driver.CreateBatchTextEmbeddings(texts[len(texts)/2:], task_type)...)
+	}
+	input_texts := datautils.Transform(texts, func(item *string) string { return driver.toEmbeddingInput(*item, task_type) })
+	embs := driver.createEmbeddings(&inferenceInput{input_texts})
+	// if the embeddings generation is failing insert duds
+	if embs == nil {
+		return make([][]float32, len(texts))
+	}
+	return embs
 }
 
 func (driver *EmbeddingsDriver) CreateTextEmbeddings(text string, task_type string) []float32 {
-	output := driver.createEmbeddings(&inferenceInput{[]string{driver.toEmbeddingInput(text, task_type, true)}})
+	output := driver.createEmbeddings(&inferenceInput{[]string{driver.toEmbeddingInput(text, task_type)}})
 	if len(output) >= 1 {
 		return output[0]
 	}
 	return nil
 }
 
-func (driver *EmbeddingsDriver) toEmbeddingInput(text, task_type string, is_large_text bool) string {
-	// if is_large_text {
-	// 	// split and truncate at the first chunk size
-	// 	chunks, _ := driver.splitter.SplitText(text)
-	// 	text = chunks[0]
-	// }
-	// prefix with embedding type
+func (driver *EmbeddingsDriver) toEmbeddingInput(text, task_type string) string {
 	if len(task_type) > 0 {
 		text = fmt.Sprintf("%s: %s", task_type, text)
 	}
@@ -75,9 +79,9 @@ func (driver *EmbeddingsDriver) toEmbeddingInput(text, task_type string, is_larg
 }
 
 func (driver *EmbeddingsDriver) createEmbeddings(input *inferenceInput) [][]float32 {
-	return internal.Retry(
+	return retryT(
 		func() ([][]float32, error) {
-			if embs, err := internal.PostHTTPRequest[[][]float32](driver.embed_url, "", input); err != nil {
+			if embs, err := postHTTPRequest[[][]float32](driver.embed_url, "", input); err != nil {
 				log.Printf("[EmbeddingsDriver] Embedding generation failed. %v\n", err)
 				return nil, err
 			} else if len(embs) != len(input.Inputs) {

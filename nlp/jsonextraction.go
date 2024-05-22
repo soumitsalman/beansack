@@ -1,9 +1,10 @@
-package parrotbox
+package nlp
 
 import (
 	"context"
 	"fmt"
 
+	datautils "github.com/soumitsalman/data-utils"
 	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/prompts"
@@ -11,30 +12,34 @@ import (
 )
 
 const (
-	// first %s is for `context` and the second %s is for `format_instructions`
-	json_extraction_template = "CONTEXT: %s.\n\n" +
-		"OUTPUT FORMAT: %s\n\n" +
-		"TASK: Based on the context extract the values in the defined output format from the input content below:\n\n" +
-		"{{.input_text}}"
+	_TEMPLATE = "CONTEXT:\n{{.context}}.\n\n" +
+		"OUTPUT FORMAT:\nThe output MUST be in json format wrapped in markdown code format according to the json schema below.\n```json%s```\n\n" + // 1st %s is for schema
+		"SAMPLE OUTPUT:\nHere is a sample output format\n```json\n%s\n```\n\n" + // 2nd %s is for `sample value`
+		"TASK:\nFor each user input follow the instructions defined in CONTEXT and produce output according to OUTPUT FORMAT.\n\n" +
+		"INPUT:\n{{.input_text}}"
 
-	_default_input_key  = "input_text"
-	_default_output_key = "value"
+	_DEFAULT_OUTPUT_KEY = "value"
 )
 
 type JsonValueExtraction struct {
 	llm_chain *chains.LLMChain
 }
 
-func NewJsonValueExtraction[T any](llm llms.Model, context string, sample_value T) *JsonValueExtraction {
+func NewJsonValueExtraction[T any](llm llms.Model, sample_value T) *JsonValueExtraction {
 	parser := NewJsonOutputParser[T](sample_value)
 
 	keyconcept_prompt := prompts.NewPromptTemplate(
-		fmt.Sprintf(json_extraction_template, context, parser.GetFormatInstructions()),
-		[]string{"input_text"})
+		fmt.Sprintf(
+			_TEMPLATE,
+			parser.GetFormatInstructions(),       // output schema
+			datautils.ToJsonString(sample_value), // sample output
+		),
+		[]string{"context", "input_text"},
+	)
 
 	internal_chain := chains.NewLLMChain(llm, keyconcept_prompt, chains.WithTemperature(0))
 	internal_chain.OutputParser = parser
-	internal_chain.OutputKey = _default_output_key
+	internal_chain.OutputKey = _DEFAULT_OUTPUT_KEY
 
 	return &JsonValueExtraction{internal_chain}
 }
@@ -44,8 +49,8 @@ func (c JsonValueExtraction) Call(ctx context.Context, values map[string]any, op
 }
 
 // GetMemory returns the memory.
-func (c JsonValueExtraction) GetMemory() schema.Memory { //nolint:ireturn
-	return c.llm_chain.Memory //nolint:ireturn
+func (c JsonValueExtraction) GetMemory() schema.Memory {
+	return c.llm_chain.Memory
 }
 
 // GetInputKeys returns the expected input keys.

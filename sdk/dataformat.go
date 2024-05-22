@@ -1,6 +1,6 @@
 package sdk
 
-import "github.com/soumitsalman/beansack/nlp/parrotbox"
+import "github.com/soumitsalman/beansack/nlp"
 
 const (
 	CHANNEL = "channel"
@@ -63,7 +63,7 @@ type NewsNugget struct {
 	BeanUrls    []string  `json:"mapped_urls,omitempty" bson:"mapped_urls,omitempty"`
 }
 
-func NewKeyConcept(concept *parrotbox.KeyConcept) NewsNugget {
+func toNewsNugget(concept *nlp.KeyConcept) NewsNugget {
 	return NewsNugget{
 		KeyPhrase:   concept.KeyPhrase,
 		Event:       concept.Event,

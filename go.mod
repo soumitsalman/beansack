@@ -34,6 +34,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/nikolalohinski/gonja v1.5.3 // indirect
+	github.com/otiai10/openaigo v1.7.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
@@ -62,6 +63,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/montanaflynn/stats v0.7.1 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
+	github.com/sashabaranov/go-openai v1.24.0
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.2 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect

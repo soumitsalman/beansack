@@ -1,4 +1,4 @@
-package parrotbox
+package nlp
 
 type Digest struct {
 	Summary string `json:"summary,omitempty" bson:"summary,omitempty" jsonschema_description:"A concise summary of the document"`
