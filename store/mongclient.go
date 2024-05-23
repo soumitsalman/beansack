@@ -74,6 +74,11 @@ func (store *Store[T]) Add(docs []T) ([]T, error) {
 		docs = datautils.Filter(docs, func(item *T) bool {
 			return !datautils.In(*item, existing_items, store.equals)
 		})
+		// if these  docs already exist just return without error
+		if len(docs) == 0 {
+			log.Printf("[%s]: Docs already exists, nothing new to insert.\n", store.name)
+			return nil, nil
+		}
 	}
 
 	res, err := store.collection.InsertMany(ctx.Background(), datautils.Transform(docs, func(item *T) any { return *item }))

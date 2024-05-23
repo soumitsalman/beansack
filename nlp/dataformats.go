@@ -5,7 +5,7 @@ type Digest struct {
 	Topic   string `json:"topic,omitempty" bson:"topic,omitempty" jsonschema_description:"The topic of the content such as: Threat Intelligence, New Malware, Israel Hamas War, iPhone Release, LLAMA Performance, Disease, Politics, Drug Epidemic, Entertainment, Gaiming etc."`
 }
 
-type KeyConceptList struct {
+type keyConceptList struct {
 	Items []KeyConcept `json:"concepts" jsonschema_description:"Array of keyconcepts"`
 }
 

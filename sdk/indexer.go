@@ -46,7 +46,7 @@ func Cleanup(delete_window int) {
 //  7. Create generated fields for the beans and add them to database
 //  8. Map the news nuggets to the beans
 func AddBeans(beans []Bean) {
-	// 	1. Filter out the tiny ones and the channels for now
+	// 1. Filter out the tiny ones and the channels for now
 	beans = datautils.Filter(beans, func(item *Bean) bool { return (len(item.Text) >= _MIN_TEXT_LENGTH) && (item.Kind != CHANNEL) })
 
 	// extract out the beans medianoises
@@ -59,7 +59,7 @@ func AddBeans(beans []Bean) {
 		}
 	})
 
-	//  2. Truncate the contents to keep below the limit and assign update time
+	// 2. Truncate the contents to keep below the limit and assign update time
 	update_time := time.Now().Unix()
 	beans = datautils.ForEach(beans, func(item *Bean) {
 		item.Updated = update_time
@@ -67,7 +67,7 @@ func AddBeans(beans []Bean) {
 		item.MediaNoise = nil
 	})
 
-	//  3. Add the beans to the database
+	// 3. Add the beans to the database
 	// notice that the beans get reassigned for custom fields generation
 	// since if certain bean does not get added it has already been processed and linked
 	beans, err := beanstore.Add(beans)
@@ -75,29 +75,42 @@ func AddBeans(beans []Bean) {
 		log.Println("[beansack|Indexer] Failed to add new beans. Terminating early.", err)
 		return
 	}
-	// TODO: if an item with the same url exists it will not get added but if it has a media noise it should get updated with the current updated date
 
-	//  4. Add media noise to database
-	datautils.ForEach(medianoises, func(item *MediaNoise) {
-		item.Updated = update_time
-		item.Digest = nlp.TruncateTextOnTokenCount(item.Digest)
-	})
-	// now store the medianoises. But no need to check for error since their storage is auxiliary for the overall experience
-	noisestore.Add(medianoises)
+	// 4. Add media noise to database
+	if len(medianoises) > 0 {
+		// If a bean with the same url exists it will not get added but if it has a media noise it should get updated with the current updated date
+		beans_update := make([]any, 0, len(medianoises))
+		beans_ids := make([]store.JSON, 0, len(medianoises))
 
-	//  5. Create news nuggets and add to db
-	//  6. Create embeddings for news nuggets and add to db
-	// parallelizing this one since its a different server than the embeddings
-	// this will be faster than going through the custom fields
-	go generateNewsNuggets(beans)
+		datautils.ForEach(medianoises, func(item *MediaNoise) {
+			item.Updated = update_time
+			item.Digest = nlp.TruncateTextOnTokenCount(item.Digest)
+			// create the update times for the beans
+			beans_update = append(beans_update, store.JSON{"updated": update_time})
+			beans_ids = append(beans_ids, store.JSON{"url": item.BeanUrl})
+		})
+		// now store the medianoises. But no need to check for error since their storage is auxiliary for the overall experience
+		noisestore.Add(medianoises)
+		// update the beans with medianoise
+		beanstore.Update(beans_update, beans_ids)
+	}
 
-	//  7. Create generated fields for the beans and add them to database
-	generateCustomFieldsForBeans(beans)
+	// if no new bean got added then no need to go through hoops for these
+	if len(beans) > 0 {
+		// 5. Create news nuggets and add to db
+		// 6. Create embeddings for news nuggets and add to db
+		// parallelizing this one since its a different server than the embeddings
+		// this will be faster than going through the custom fields
+		go generateNewsNuggets(beans)
 
-	//  8. Map the news nuggets to the beans
-	// this is remap across the board that will take place for each Add Beans to keep the mapping fresh
-	// even if not all the nuggets have been generated the new incoming nuggests will get mapped during the next rounds
-	remapNewsNuggets()
+		// 7. Create generated fields for the beans and add them to database
+		generateCustomFieldsForBeans(beans)
+
+		// 8. Map the news nuggets to the beans
+		// this is remap across the board that will take place for each Add Beans to keep the mapping fresh
+		// even if not all the nuggets have been generated the new incoming nuggests will get mapped during the next rounds
+		remapNewsNuggets()
+	}
 }
 
 func generateCustomFieldsForBeans(beans []Bean) {
@@ -129,39 +142,9 @@ func generateFieldForBeans(beans []Bean, field_name string) {
 		updates = datautils.Transform(digests, func(item *nlp.Digest) any { return item })
 	}
 	beanstore.Update(updates, filters)
-
-	// NO NEED TO RUN IN BATCHES
-	// runInBatches(beans, _RECT_BATCH_SIZE, func(batch []Bean) {
-	// 	texts := getTextFields(batch)
-	// 	// generate whatever needs to be generated
-	// 	var updates []any
-	// 	switch field_name {
-	// 	case _CATEGORY_EMB:
-	// 		cat_embs := emb_client.CreateBatchTextEmbeddings(texts, nlp.CATEGORIZATION)
-	// 		updates = datautils.Transform(cat_embs, func(emb *[]float32) any {
-	// 			return Bean{CategoryEmbeddings: *emb}
-	// 		})
-	// 	case _SEARCH_EMB:
-	// 		search_embs := emb_client.CreateBatchTextEmbeddings(texts, nlp.SEARCH_DOCUMENT)
-	// 		updates = datautils.Transform(search_embs, func(emb *[]float32) any {
-	// 			return Bean{SearchEmbeddings: *emb}
-	// 		})
-	// 	case _SUMMARY:
-	// 		// summary and topic. but topic is low priority field and it comes with summary
-	// 		digests := pb_client.ExtractDigests(texts)
-	// 		updates = datautils.Transform(digests, func(item *nlp.Digest) any { return item })
-	// 	}
-	// 	// get identifier and text content for processing
-	// 	filters := getBeanIdFilters(batch)
-	// 	beanstore.Update(updates, filters)
-	// })
 }
 
 func generateNewsNuggets(beans []Bean) {
-	if len(beans) == 0 {
-		return // there are no beans so just return
-	}
-
 	// extract key newsnuggets
 	keyconcepts := pb_client.ExtractKeyConcepts(getTextFields(beans))
 	// remove the duds

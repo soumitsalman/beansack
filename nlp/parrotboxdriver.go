@@ -92,7 +92,7 @@ func (client *ParrotboxClient) ExtractKeyConcepts(texts []string) []KeyConcept {
 					// insert duds for this batch.
 					return nil, err
 				}
-				return result["value"].(KeyConceptList).Items, nil
+				return result["value"].(keyConceptList).Items, nil
 			})
 		if len(res) > 0 {
 			output = append(output, res...)

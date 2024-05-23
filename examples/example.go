@@ -50,39 +50,42 @@ func Nlp() {
 	// 	"There are a lot of hacking gadgets that can be used to pen test stuff. Like a bad usb, Flipper Zero, deauther watch, pwnagotchi, etc etc. But couldn't I just use my Laptop for those kinds of things? Hardware wise its probably better than those gadgets.\nIm new to pen testing and was just wondering if one just couldn't use their laptop to do the same stuff that those gadgets can.",
 	// 	"about this project\nI am passionate about self development and programming. Thus I created an affirmations app with Go - which is becoming quickly my favourite language.\nThe code is by no means perfect, although I tried to keep it as clean as possible.\nI've used Echo and Templ on backend, materialize.css and jQuery on frontend.\nFeel free to modify it and improve it as you see fit.\nYou can see it in action and use it here:\nhttps://easyaffirm.com/\ntooling needed to be installed before running\napt-get install xdotool\napt install mariadb-server\napt-get install npm\nnpm install -g sass\nnpm install -g browserify\ncd internal/frontend\nnpm install\ngo mod tidy\ngo install github.com/cosmtrek/air@latest\ngo install github.com/a-h/templ/cmd/templ@latest\nalso install the migrate tool.\nhttps://github.com/golang-migrate/migrate/releases\nYou can download the .deb package from assets and double click to install\nmysql setup:\nthen:\nCREATE DATABASE affirmtempl;\nCREATE USER 'affirmtempl'@'localhost';\nGRANT ALL PRIVILEGES ON affirmtempl.* TO 'affirmtempl'@'localhost' WITH GRANT OPTION;\n-- Important: Make sure to swap 'pass' with a password of your own choosing.\nALTER USER 'affirmtempl'@'localhost' IDENTIFIED BY 'pass';\nthen migrate\nmigrate -path=./migrations -database=\"mysql://affirmtempl:pass@tcp(localhost)/affirmtempl\" up\nrun dev\nrun air in the root directory of this project to run a development server and live reload.\nOpen 'localhost:4000'  in your browser to use this app.\nthe reload script will try to find a Google Chrome window for hot reloading\nin the script located at ./scripts/devreload.sh\nWID=$(xdotool search --name \"Google Chrome\")\nIf you have Firefox or another browser, change the name to the respective browser instead of \"Google Chrome\"\nstyle modifications\nstatic/sass/app/_appstyle.scss\nstatic/sass/materialize.scss\nstatic/sass/_color-variables.scss\nstatic/sass/components/_variables.scss\nstatic/js/app.js\nlicensing and disclaimer\nI'm releasing this under a Creative Common CC0 license. Basically you can do whatever you want with it, no need for attribution either.\nhttps://creativecommons.org/public-domain/cc0/\nDisclaimer:\nTHE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.",
 	// }
-	inputs := datautils.Transform(getBeans(), func(item *sdk.Bean) string { return nlp.TruncateTextOnTokenCount(item.Text) })
+	inputs := datautils.Transform(getBeans("./examples/testdata/dataset2.json"), func(item *sdk.Bean) string { return nlp.TruncateTextOnTokenCount(item.Text) })
 
 	// for keyconcepts and digests
 	pb := nlp.NewParrotboxClient(os.Getenv("LLMSERVICE_API_KEY"))
 
-	// digests := pb.ExtractDigests(inputs)
-	// fmt.Println(datautils.ToJsonString(digests))
+	digests := pb.ExtractDigests(inputs)
+	fmt.Println(datautils.ToJsonString(digests))
 
 	nuggets := pb.ExtractKeyConcepts(inputs)
 	fmt.Println(datautils.ToJsonString(nuggets))
 
-	// // for embeddings
-	// embed := nlp.NewEmbeddingsDriver(os.Getenv("EMBEDDER_BASE_URL"))
-	// datautils.ForEach(embed.CreateBatchTextEmbeddings(inputs, nlp.SEARCH_DOCUMENT), func(emb *[]float32) {
-	// 	if len(*emb) == 0 {
-	// 		log.Println("returned dud")
-	// 	} else {
-	// 		log.Println((*emb)[0])
-	// 	}
-	// })
+	// for embeddings
+	embed := nlp.NewEmbeddingsDriver(os.Getenv("EMBEDDER_BASE_URL"))
+	datautils.ForEach(embed.CreateBatchTextEmbeddings(inputs, nlp.SEARCH_DOCUMENT), func(emb *[]float32) {
+		if len(*emb) == 0 {
+			log.Println("returned dud")
+		} else {
+			log.Println((*emb)[0])
+		}
+	})
 }
 
 func NewBeans() {
-	beans := getBeans()
+	beans := getBeans("./examples/testdata/dataset3_with_noise.json")
 	// initialize the services
 	if err := sdk.InitializeBeanSack(os.Getenv("DB_CONNECTION_STRING"), os.Getenv("EMBEDDER_BASE_URL"), os.Getenv("LLMSERVICE_API_KEY")); err != nil {
 		log.Fatalln("Beansack initialization not working.", err)
 	}
+	log.Println(len(beans), "New Beans")
+	sdk.AddBeans(beans)
+	// add it again for testing medianoise updates
 	sdk.AddBeans(beans)
 }
 
-func getBeans() []sdk.Bean {
-	file, err := os.Open("./examples/testdata/dataset2.json")
+func getBeans(dataset string) []sdk.Bean {
+	file, err := os.Open(dataset)
 	if err != nil {
 		log.Fatalln("Error opening dataset.", err)
 	}

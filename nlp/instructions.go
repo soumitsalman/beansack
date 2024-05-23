@@ -17,7 +17,7 @@ const (
 		_BATCH_DELIMETER +
 		"On Thursday evening, many iPhone owners (including some here at The Verge) saw the “not delivered” flag when trying to send texts via iMessage. People reported the problem across multiple wireless carriers (Verizon, AT&T, and T-Mobile), countries, and even continents.The Apple services status page didn’t show any indication of trouble while the problems were going on, but now it has been updated after the fact, reflecting a resolved issue where “Users were unable to use this service” for iMessage, Apple Messages for Business, FaceTime, and HomeKit. According to the note, the problems went on from about 5:39PM ET until 6:35PM ET.Screenshot: Apple.comApple has not responded to inquiries or otherwise commented on the issue; however, judging by our use and reports on social media, everything seems to be up and running again. However, if your international friends are still saying, “Just use WhatsApp!” there isn’t really anything we can do about that.Update, May 16th: Noted the issue appears to be resolved." +
 		_BATCH_DELIMETER +
-		"Skip to content\n\n    \n        \n\n        \n            \n\n    \n\n    \n        Pump It Up is a popular music video game that hails from South Korea. It’s similar in vibe to Dance Dance Revolution and In The Groove, but it has an extra arrow panel to make life harder. [Rodrigo Alfonso] loved it so much, he ported it to the Game Boy Advance.\nThe port looks fantastic, with all the fast-moving arrows and lovely sprite-based graphics you could dream of. But more than that, [Rodrigo’s] port is very fully featured. It doesn’t rely on tracked or sampled music, instead using actual GSM audio files for the songs.\nIt can also accept input from a PS/2 keyboard, and you can even do multiplayer over the GBA’s Wireless Adapter. What’s even cooler is that some of the game’s neat features have been broken out into separate libraries so other developers can use them. If you need a Serial Port library for the GBA, or a way to read the SD card on flash carts, [Rodrigo] has put the code on GitHub.\nAs you might have guessed, this isn’t the first time [Rodrigo] has pushed the limits on what Nintendo’s 32-bit handheld can do."
+		"Skip to content\n\nPump It Up is a popular music video game that hails from South Korea. It’s similar in vibe to Dance Dance Revolution and In The Groove, but it has an extra arrow panel to make life harder. [Rodrigo Alfonso] loved it so much, he ported it to the Game Boy Advance.\nThe port looks fantastic, with all the fast-moving arrows and lovely sprite-based graphics you could dream of. But more than that, [Rodrigo’s] port is very fully featured. It doesn’t rely on tracked or sampled music, instead using actual GSM audio files for the songs.\nIt can also accept input from a PS/2 keyboard, and you can even do multiplayer over the GBA’s Wireless Adapter. What’s even cooler is that some of the game’s neat features have been broken out into separate libraries so other developers can use them. If you need a Serial Port library for the GBA, or a way to read the SD card on flash carts, [Rodrigo] has put the code on GitHub.\nAs you might have guessed, this isn’t the first time [Rodrigo] has pushed the limits on what Nintendo’s 32-bit handheld can do."
 )
 
 var (
@@ -26,25 +26,7 @@ var (
 		Topic:   "New Disney Plus Series",
 	}
 
-	// _CONCEPTS_SAMPLE_OUTPUT = []KeyConcept{
-	// 	{
-	// 		KeyPhrase:   "IEEE 802.11 Wi-Fi standard",
-	// 		Event:       "Design flaw in IEEE 802.11 Wi-Fi standard",
-	// 		Description: "Researchers at KU Leuven discovered a fundamental design flaw in the IEEE 802.11 Wi-Fi standard that gives attackers a way to trick victims into connecting with a less secure wireless network than the one to which they intended to connect.",
-	// 	},
-	// 	{
-	// 		KeyPhrase:   "D-Link DIR-X4860 routers",
-	// 		Event:       "Zero-day Exploit in D-Link DIR-X4860 routers",
-	// 		Description: "Researchers have released an exploit for a zero-day security flaw in D-Link DIR-X4860 routers, allowing attackers to take over devices and execute commands with root privileges.",
-	// 	},
-	// 	{
-	// 		KeyPhrase:   "Cinterion cellular modems",
-	// 		Event:       "Multiple security flaws in Cinterion cellular modems",
-	// 		Description: "Cybersecurity researchers have disclosed multiple security flaws in Cinterion cellular modems that could be potentially exploited by threat actors to access sensitive information and achieve code execution.",
-	// 	},
-	// }
-
-	_CONCEPTS_SAMPLE_OUTPUT = KeyConceptList{
+	_CONCEPTS_SAMPLE_OUTPUT = keyConceptList{
 		Items: []KeyConcept{
 			{
 				KeyPhrase:   "Fentanyl",
