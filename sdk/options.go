@@ -12,11 +12,11 @@ const (
 )
 
 type SearchOptions struct {
-	Filter             store.JSON
-	TopN               int
-	CategoryTexts      []string
-	CategoryEmbeddings [][]float32
-	Context            string
+	Filter           store.JSON
+	TopN             int
+	SearchTexts      []string
+	SearchEmbeddings [][]float32
+	Context          string
 }
 
 func NewSearchOptions() *SearchOptions {

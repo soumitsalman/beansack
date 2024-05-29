@@ -17,8 +17,8 @@ const (
 	_DELETE_WINDOW = 15
 
 	// vector and text search filters
-	_DEFAULT_CATEGORY_MATCH_SCORE = 0.7
-	_DEFAULT_CONTEXT_MATCH_SCORE  = 0.55
+	_DEFAULT_CLASSIFICATION_MATCH_SCORE = 0.68
+	_DEFAULT_CONTEXT_MATCH_SCORE        = 0.60
 )
 
 var (
@@ -105,9 +105,9 @@ func FuzzySearch(options *SearchOptions) []Bean {
 			store.WithMinSearchScore(min_score),
 			store.WithVectorTopN(options.TopN))
 		// vector search score is too restrictive for the embeddings model
-		// do a text search and return the top 2 as sample
+		// do a text search and return the top N as sample
 		if len(beans) <= 0 {
-			options.TopN = 2
+			// options.TopN = 2
 			beans = TextSearch(keywords, options)
 		}
 	}
@@ -118,19 +118,22 @@ func FuzzySearch(options *SearchOptions) []Bean {
 // the outputs are: search_mode, embeddings (if applicable), vector_field (if applicable), min_vector_search_score, keywords (if applicable)
 func getFuzzySearchMode(options *SearchOptions) (int, [][]float32, string, float64, []string) {
 	var embs [][]float32
-	if len(options.CategoryEmbeddings) > 0 {
+	if len(options.SearchEmbeddings) > 0 {
 		// no need to generate embeddings. search for CATEGORIES defined by these
-		return _VECTOR, options.CategoryEmbeddings, _CATEGORY_EMB, _DEFAULT_CATEGORY_MATCH_SCORE, []string{""}
-	} else if len(options.CategoryTexts) > 0 {
+		return _VECTOR, options.SearchEmbeddings, _CLASSIFICATION_EMB, _DEFAULT_CLASSIFICATION_MATCH_SCORE, nil
+	} else if len(options.SearchTexts) > 0 {
 		// generate embeddings for these categories
-		log.Printf("[beanops] Generating embeddings for %d categories.\n", len(options.CategoryTexts))
-		embs = emb_client.CreateBatchTextEmbeddings(options.CategoryTexts, nlp.CATEGORIZATION)
-		return _VECTOR, embs, _CATEGORY_EMB, _DEFAULT_CATEGORY_MATCH_SCORE, options.CategoryTexts
+		log.Printf("[beanops] Generating embeddings for %d categories.\n", len(options.SearchTexts))
+		embs = emb_client.CreateBatchTextEmbeddings(options.SearchTexts, nlp.CLASSIFICATION)
+		return _VECTOR, embs, _CLASSIFICATION_EMB, _DEFAULT_CLASSIFICATION_MATCH_SCORE, options.SearchTexts
 	} else if len(options.Context) > 0 {
 		// generate embeddings for the context and search using SEARCH EMBEDDINGS
 		log.Println("[beanops] Generating embeddings for:", options.Context)
-		embs = [][]float32{emb_client.CreateTextEmbeddings(options.Context, nlp.SEARCH_QUERY)}
-		return _VECTOR_OR_TEXT, embs, _SEARCH_EMB, _DEFAULT_CONTEXT_MATCH_SCORE, []string{options.Context}
+		// deprecating search_embedddings
+		// embs = [][]float32{emb_client.CreateTextEmbeddings(options.Context, nlp.SEARCH_QUERY)}
+		// return _VECTOR_OR_TEXT, embs, _SEARCH_EMB, _DEFAULT_CONTEXT_MATCH_SCORE, []string{options.Context}
+		embs = [][]float32{emb_client.CreateTextEmbeddings(options.Context, nlp.CLASSIFICATION)}
+		return _VECTOR, embs, _CLASSIFICATION_EMB, _DEFAULT_CONTEXT_MATCH_SCORE, options.SearchTexts
 	} else {
 		log.Println("[beanops] No `vector search` parameter defined.")
 		return _GET, nil, "", 0, nil // none of the other parameters matter

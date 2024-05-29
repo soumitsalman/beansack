@@ -9,6 +9,11 @@ import (
 	datautils "github.com/soumitsalman/data-utils"
 )
 
+const (
+	_MIN_RECTIFY_WINDOW = 4
+	_MAX_RECTIFY_WINDOW = 30
+)
+
 // default configurations
 const (
 	_MIN_TEXT_LENGTH                 = 100 // content length for processing for NLP driver
@@ -17,7 +22,9 @@ const (
 	_DEFAULT_NUGGET_TEXT_MATCH_SCORE = 10
 )
 
-var _GENERATED_FIELDS = []string{_CATEGORY_EMB, _SEARCH_EMB, _SUMMARY}
+// var _GENERATED_FIELDS = []string{_CATEGORY_EMB, _SEARCH_EMB, _SUMMARY}
+// removing search embeddings
+var _GENERATED_FIELDS = []string{_CLASSIFICATION_EMB, _SUMMARY}
 
 func Cleanup(delete_window int) {
 	delete_filter := store.JSON{
@@ -109,7 +116,7 @@ func AddBeans(beans []Bean) {
 		// 8. Map the news nuggets to the beans
 		// this is remap across the board that will take place for each Add Beans to keep the mapping fresh
 		// even if not all the nuggets have been generated the new incoming nuggests will get mapped during the next rounds
-		remapNewsNuggets()
+		remapNewsNuggets(_MIN_RECTIFY_WINDOW)
 	}
 }
 
@@ -126,16 +133,16 @@ func generateFieldForBeans(beans []Bean, field_name string) {
 	// generate whatever needs to be generated
 	var updates []any
 	switch field_name {
-	case _CATEGORY_EMB:
-		cat_embs := emb_client.CreateBatchTextEmbeddings(texts, nlp.CATEGORIZATION)
+	case _CLASSIFICATION_EMB:
+		cat_embs := emb_client.CreateBatchTextEmbeddings(texts, nlp.CLASSIFICATION)
 		updates = datautils.Transform(cat_embs, func(emb *[]float32) any {
 			return Bean{CategoryEmbeddings: *emb}
 		})
-	case _SEARCH_EMB:
-		search_embs := emb_client.CreateBatchTextEmbeddings(texts, nlp.SEARCH_DOCUMENT)
-		updates = datautils.Transform(search_embs, func(emb *[]float32) any {
-			return Bean{SearchEmbeddings: *emb}
-		})
+	// case _SEARCH_EMB:
+	// 	search_embs := emb_client.CreateBatchTextEmbeddings(texts, nlp.SEARCH_DOCUMENT)
+	// 	updates = datautils.Transform(search_embs, func(emb *[]float32) any {
+	// 		return Bean{SearchEmbeddings: *emb}
+	// 	})
 	case _SUMMARY:
 		// summary and topic. but topic is low priority field and it comes with summary
 		digests := pb_client.ExtractDigests(texts)
@@ -164,7 +171,9 @@ func generateNewsNuggets(beans []Bean) {
 	// generate the embeddings
 	log.Printf("[beanops] Generating embeddings for %d News Nuggets.\n", len(nuggets))
 	descriptions := datautils.Transform(nuggets, func(item *NewsNugget) string { return item.Description })
-	embs := emb_client.CreateBatchTextEmbeddings(descriptions, nlp.CATEGORIZATION)
+	// deprecating categorization
+	// embs := emb_client.CreateBatchTextEmbeddings(descriptions, nlp.CATEGORIZATION)
+	embs := emb_client.CreateBatchTextEmbeddings(descriptions, nlp.SEARCH_QUERY)
 	for i := range nuggets {
 		nuggets[i].Embeddings = embs[i]
 	}
@@ -178,7 +187,7 @@ func generateCustomFieldForNuggets(nuggets []NewsNugget) {
 
 	descriptions := datautils.Transform(nuggets, func(item *NewsNugget) string { return item.Description })
 	embs := datautils.Transform(
-		emb_client.CreateBatchTextEmbeddings(descriptions, nlp.CATEGORIZATION),
+		emb_client.CreateBatchTextEmbeddings(descriptions, nlp.CLASSIFICATION),
 		func(item *[]float32) any {
 			return NewsNugget{Embeddings: *item}
 		})
@@ -189,24 +198,16 @@ func generateCustomFieldForNuggets(nuggets []NewsNugget) {
 	}
 }
 
-func getNewsNuggetIds(batch []NewsNugget) []store.JSON {
-	// update it with updater
-	ids := datautils.Transform(batch, func(item *NewsNugget) store.JSON {
-		if item.ID == nil {
-			// these have not been inserted so use the updated field
-			return store.JSON{"updated": item.Updated}
-		}
-		return store.JSON{"_id": item.ID}
-	})
-	return ids
-}
-
-func remapNewsNuggets() {
+func remapNewsNuggets(window int) {
 	nuggets := nuggetstore.Get(
 		store.JSON{
 			"embeddings": store.JSON{"$exists": true}, // ignore if a nugget if it doesnt have an embedding
+			"updated":    store.JSON{"$gte": timeValue(window)},
 		},
-		nil, nil, -1)
+		store.JSON{
+			"_id":        1,
+			"embeddings": 1,
+		}, nil, -1)
 
 	url_fields := store.JSON{"url": 1}
 	non_channels := store.JSON{
@@ -217,7 +218,7 @@ func remapNewsNuggets() {
 		// this is still a fuzzy search and it does not always work well
 		// if it doesn't do a text search
 		beans := beanstore.VectorSearch([][]float32{km.Embeddings},
-			_CATEGORY_EMB,
+			_CLASSIFICATION_EMB,
 			store.WithVectorFilter(non_channels),
 			store.WithMinSearchScore(_DEFAULT_NUGGET_MATCH_SCORE),
 			store.WithVectorTopN(_MAX_TOPN),
@@ -249,7 +250,7 @@ func Rectify() {
 		beans := beanstore.Get(
 			store.JSON{
 				field_name: store.JSON{"$exists": false},
-				"updated":  store.JSON{"$gte": timeValue(2)},
+				"updated":  store.JSON{"$gte": timeValue(_MAX_RECTIFY_WINDOW)},
 				"kind":     store.JSON{"$ne": CHANNEL},
 			},
 			store.JSON{
@@ -272,7 +273,7 @@ func Rectify() {
 	nuggets := nuggetstore.Get(
 		store.JSON{
 			"embeddings": store.JSON{"$exists": false},
-			"updated":    store.JSON{"$gte": timeValue(2)},
+			"updated":    store.JSON{"$gte": timeValue(_MAX_RECTIFY_WINDOW)},
 		},
 		store.JSON{
 			"_id":         1,
@@ -283,7 +284,7 @@ func Rectify() {
 	)
 	generateCustomFieldForNuggets(nuggets)
 	// MAPPING: now that the beans and nuggets have embeddings, remap them
-	remapNewsNuggets()
+	remapNewsNuggets(_MAX_RECTIFY_WINDOW)
 }
 
 // current calculation score: 5 x number_of_unique_articles_or_posts + sum_of(noise_scores)
@@ -294,12 +295,6 @@ func calculateNuggetScore(beans []Bean) int {
 		base += score[0].Score
 	}
 	return base
-}
-
-func runInBatches[T any](items []T, batch_size int, do func(batch []T)) {
-	for i := 0; i < len(items); i += batch_size {
-		do(datautils.SafeSlice(items, i, i+batch_size))
-	}
 }
 
 func getBeanId(bean *Bean) store.JSON {
@@ -316,4 +311,16 @@ func getTextFields(beans []Bean) []string {
 	return datautils.Transform(beans, func(bean *Bean) string {
 		return bean.Text
 	})
+}
+
+func getNewsNuggetIds(batch []NewsNugget) []store.JSON {
+	// update it with updater
+	ids := datautils.Transform(batch, func(item *NewsNugget) store.JSON {
+		if item.ID == nil {
+			// these have not been inserted so use the updated field
+			return store.JSON{"updated": item.Updated}
+		}
+		return store.JSON{"_id": item.ID}
+	})
+	return ids
 }

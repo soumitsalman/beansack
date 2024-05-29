@@ -10,7 +10,7 @@ import (
 const (
 	SEARCH_QUERY    = "search_query"
 	SEARCH_DOCUMENT = "search_document"
-	CATEGORIZATION  = "classification"
+	CLASSIFICATION  = "classification"
 	SIMILARITY      = "clustering"
 )
 

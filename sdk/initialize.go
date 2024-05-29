@@ -22,9 +22,9 @@ var (
 )
 
 const (
-	_SEARCH_EMB   = "search_embeddings"
-	_CATEGORY_EMB = "category_embeddings"
-	_SUMMARY      = "summary"
+	// _SEARCH_EMB = "search_embeddings"
+	_CLASSIFICATION_EMB = "category_embeddings"
+	_SUMMARY            = "summary"
 )
 
 type BeanSackError string

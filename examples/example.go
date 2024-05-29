@@ -20,22 +20,33 @@ func Search() {
 
 	// search and query
 	var beans []sdk.Bean
+	search_texts := []string{"New Malware", "Health Care", "iPhone"}
+
 	// test vector search
-	beans = sdk.FuzzySearch(&sdk.SearchOptions{CategoryTexts: []string{"Russia's longest-serving minister, has been removed as defence minister by President Vladimir Putin"}})
+	beans = sdk.FuzzySearch(&sdk.SearchOptions{SearchTexts: search_texts})
+	log.Println("### Category Search Result ###")
+	datautils.ForEach(beans, func(item *sdk.Bean) { log.Printf("%f | %s\n", item.SearchScore, item.Title) })
+
+	// test context search
+	beans = sdk.FuzzySearch(&sdk.SearchOptions{Context: search_texts[0]})
+	log.Println("### Context Search Result ###")
 	datautils.ForEach(beans, func(item *sdk.Bean) { log.Printf("%f | %s\n", item.SearchScore, item.Title) })
 
 	// test text search
-	beans = sdk.TextSearch([]string{"Sergei Shoigu", "Being removed as defence minister"}, sdk.NewSearchOptions())
+	beans = sdk.TextSearch(search_texts, sdk.NewSearchOptions().WithTimeWindow(2))
+	log.Println("### Text Search Result ###")
 	datautils.ForEach(beans, func(item *sdk.Bean) { log.Printf("%f | %s\n", item.SearchScore, item.Title) })
 
 	// nugget search
-	beans = sdk.NuggetSearch([]string{"Cinterion cellular modems"}, sdk.NewSearchOptions().WithTimeWindow(2))
+	beans = sdk.NuggetSearch(search_texts, sdk.NewSearchOptions().WithTimeWindow(2))
+	log.Println("### Nuggets Search Result ###")
 	datautils.ForEach(beans, func(item *sdk.Bean) {
 		log.Printf("[%s] %s | %s\n", item.Source, time.Unix(item.Updated, 0).Format(time.DateTime), item.Title)
 	})
 
 	// trending nuggets
 	nuggets := sdk.TrendingNuggets(sdk.NewSearchOptions().WithTimeWindow(2))
+	log.Println("### Trending Nuggets Result ###")
 	datautils.ForEach(nuggets, func(item *sdk.NewsNugget) { log.Printf("%d | %s: %s\n", item.TrendScore, item.KeyPhrase, item.Event) })
 
 }
@@ -63,17 +74,20 @@ func Nlp() {
 
 	// for embeddings
 	embed := nlp.NewEmbeddingsDriver(os.Getenv("EMBEDDER_BASE_URL"))
-	datautils.ForEach(embed.CreateBatchTextEmbeddings(inputs, nlp.SEARCH_DOCUMENT), func(emb *[]float32) {
+	start_time := time.Now()
+	res := datautils.ForEach(embed.CreateBatchTextEmbeddings(inputs, nlp.SEARCH_DOCUMENT), func(emb *[]float32) {
 		if len(*emb) == 0 {
 			log.Println("returned dud")
 		} else {
 			log.Println((*emb)[0])
 		}
 	})
+	dur := time.Since(start_time) / time.Second
+	log.Printf("%d embeddings generated in %ds. Avg %f\n", len(res), dur, float32(dur)/float32(len(res)))
 }
 
 func NewBeans() {
-	beans := getBeans("./examples/testdata/dataset3_with_noise.json")
+	beans := getBeans("./examples/testdata/dataset1.json")
 	// initialize the services
 	if err := sdk.InitializeBeanSack(os.Getenv("DB_CONNECTION_STRING"), os.Getenv("EMBEDDER_BASE_URL"), os.Getenv("LLMSERVICE_API_KEY")); err != nil {
 		log.Fatalln("Beansack initialization not working.", err)

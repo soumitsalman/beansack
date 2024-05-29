@@ -52,7 +52,7 @@ func WithSortBy(sort_by JSON) SearchOption {
 // topN is part of the first item in the pipeline
 func WithVectorTopN(top_n int) SearchOption {
 	return func(search_pipeline []JSON) []JSON {
-		if top_n < 0 {
+		if top_n <= 0 {
 			top_n = _DEFAULT_SEARCH_TOP_N
 		}
 		search_pipeline[0]["$search"].(JSON)["cosmosSearch"].(JSON)["k"] = top_n

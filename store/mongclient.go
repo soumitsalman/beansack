@@ -11,10 +11,9 @@ import (
 	datautils "github.com/soumitsalman/data-utils"
 )
 
-// const (
-// 	_DEFAULT_SEARCH_MIN_SCORE = 0.5
-// 	_DEFAULT_SEARCH_TOP_N     = 5
-// )
+const (
+	_UPDATE_BATCH_SIZE = 95 // batch size of 90 seems to be working. It occationally fails for 99
+)
 
 type JSON map[string]any
 
@@ -99,18 +98,22 @@ func (store *Store[T]) Update(docs []any, filters []JSON) {
 			SetFilter(filters[i]).
 			SetUpdate(JSON{"$set": docs[i]})
 	}
-	res, err := store.collection.BulkWrite(ctx.Background(), updates)
-	if err != nil {
-		log.Printf("[%s]: Update failed. %v\v", store.name, err)
-		return
+	// run in batches because bulk write cannot handle a big batch
+	err_count := 0
+	for i := 0; i < len(updates); i += _UPDATE_BATCH_SIZE {
+		batch := datautils.SafeSlice(updates, i, i+_UPDATE_BATCH_SIZE)
+		_, err := store.collection.BulkWrite(ctx.Background(), batch)
+		if err != nil {
+			log.Printf("[%s]: Update failed for docs[%d] - docs[%d]. %v\n", store.name, i, i+len(updates), err)
+			log.Println(datautils.ToJsonString(filters[i : i+len(batch)]))
+			err_count += _UPDATE_BATCH_SIZE
+		}
 	}
-	log.Printf("[%s]: %d items updated.\n", store.name, res.MatchedCount)
+	log.Printf("[%s]: %d items updated.\n", store.name, len(updates)-err_count)
 }
 
+// wrapper over mongodb get
 func (store *Store[T]) Get(filter JSON, fields JSON, sort_by JSON, top_n int) []T {
-	// _filter := JSON{"kind": "article"}
-	// _fields := bson.D{{"url", 1}, {"text", 1}}
-	// log.Println(datautils.ToJsonString(_filter), datautils.ToJsonString(_fields))
 	find_options := options.Find()
 	if len(fields) > 0 {
 		find_options = find_options.SetProjection(fields)
