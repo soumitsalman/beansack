@@ -20,20 +20,25 @@ func Search() {
 
 	// search and query
 	var beans []sdk.Bean
-	search_texts := []string{"New Malware", "Health Care", "iPhone"}
+	search_texts := []string{"Cybersecurity", "Security Breach", "Threat Intelligence"}
 
 	// test vector search
-	beans = sdk.FuzzySearch(&sdk.SearchOptions{SearchTexts: search_texts})
+	search_opt := sdk.NewSearchOptions().WithTopN(10).WithTimeWindow(3)
+	search_opt.SearchTexts = search_texts
+	beans = sdk.FuzzySearch(search_opt)
 	log.Println("### Category Search Result ###")
 	datautils.ForEach(beans, func(item *sdk.Bean) { log.Printf("%f | %s\n", item.SearchScore, item.Title) })
 
 	// test context search
-	beans = sdk.FuzzySearch(&sdk.SearchOptions{Context: search_texts[0]})
+	search_opt = sdk.NewSearchOptions().WithTopN(10).WithTimeWindow(2)
+	search_opt.Context = search_texts[0]
+	beans = sdk.FuzzySearch(search_opt)
 	log.Println("### Context Search Result ###")
 	datautils.ForEach(beans, func(item *sdk.Bean) { log.Printf("%f | %s\n", item.SearchScore, item.Title) })
 
 	// test text search
-	beans = sdk.TextSearch(search_texts, sdk.NewSearchOptions().WithTimeWindow(2))
+	search_opt = sdk.NewSearchOptions().WithTopN(10).WithTimeWindow(2)
+	beans = sdk.TextSearch(search_texts, search_opt)
 	log.Println("### Text Search Result ###")
 	datautils.ForEach(beans, func(item *sdk.Bean) { log.Printf("%f | %s\n", item.SearchScore, item.Title) })
 

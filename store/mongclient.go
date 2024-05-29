@@ -146,7 +146,7 @@ func (store *Store[T]) VectorSearch(query_embeddings [][]float32, vec_path strin
 		search_pipeline := createVectorSearchPipeline(*vec, vec_path, options)
 		result = append(result, store.Aggregate(search_pipeline)...)
 	})
-	return result
+	return store.deduplicate(result)
 }
 
 func (store *Store[T]) Delete(filter JSON) {
@@ -156,6 +156,20 @@ func (store *Store[T]) Delete(filter JSON) {
 	} else {
 		log.Printf("[%s]: %d items deleted.\n", store.name, res.DeletedCount)
 	}
+}
+
+func (store *Store[T]) deduplicate(items []T) []T {
+	// if there is no equality or Id function just return what there is
+	if store.equals != nil {
+		unique := make([]T, 0, len(items))
+		datautils.ForEach(items, func(item *T) {
+			if !datautils.In(*item, unique, store.equals) {
+				unique = append(unique, *item)
+			}
+		})
+		return unique
+	}
+	return items
 }
 
 func (store *Store[T]) getIDs(items []T) []JSON {
