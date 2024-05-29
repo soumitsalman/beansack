@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	_MIN_RECTIFY_WINDOW = 4
+	_MIN_RECTIFY_WINDOW = 2
 	_MAX_RECTIFY_WINDOW = 30
 )
 
@@ -116,7 +116,8 @@ func AddBeans(beans []Bean) {
 		// 8. Map the news nuggets to the beans
 		// this is remap across the board that will take place for each Add Beans to keep the mapping fresh
 		// even if not all the nuggets have been generated the new incoming nuggests will get mapped during the next rounds
-		remapNewsNuggets(_MIN_RECTIFY_WINDOW)
+		// this can happen in parallel and does not need to block the call
+		go remapNewsNuggets(_MIN_RECTIFY_WINDOW)
 	}
 }
 
