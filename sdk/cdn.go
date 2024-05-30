@@ -55,13 +55,33 @@ const (
 	_VECTOR_OR_TEXT = 3
 )
 
+// This retrieves beans using scalar filter instead of fuzzy searching
+func Retrieve(options *SearchOptions) []Bean {
+	return beanstore.Get(
+		options.ScalarFilter,
+		store.JSON{
+			// for beans
+			"url":     1,
+			"updated": 1,
+			"source":  1,
+			"title":   1,
+			"kind":    1,
+			"author":  1,
+			"created": 1,
+			"text":    1,
+		},
+		_SORT_BY_UPDATED,
+		options.TopN,
+	)
+}
+
 func TextSearch(keywords []string, settings *SearchOptions) []Bean {
 	var beans []Bean
 	if settings == nil {
 		beans = beanstore.TextSearch(keywords, store.WithProjection(_PROJECTION_FIELDS))
 	} else {
 		beans = beanstore.TextSearch(keywords,
-			store.WithTextFilter(settings.Filter),
+			store.WithTextFilter(settings.ScalarFilter),
 			store.WithProjection(_PROJECTION_FIELDS),
 			store.WithTextTopN(settings.TopN))
 	}
@@ -82,7 +102,7 @@ func FuzzySearch(options *SearchOptions) []Bean {
 	switch mode {
 	case _GET:
 		beans = beanstore.Get(
-			options.Filter,
+			options.ScalarFilter,
 			_PROJECTION_FIELDS,
 			store.JSON{"updated": -1},
 			options.TopN)
@@ -92,7 +112,7 @@ func FuzzySearch(options *SearchOptions) []Bean {
 		beans = beanstore.VectorSearch(
 			embs,
 			vec_field,
-			store.WithVectorFilter(options.Filter),
+			store.WithVectorFilter(options.ScalarFilter),
 			store.WithProjection(_PROJECTION_FIELDS),
 			store.WithMinSearchScore(min_score),
 			store.WithVectorTopN(options.TopN))
@@ -100,7 +120,7 @@ func FuzzySearch(options *SearchOptions) []Bean {
 		beans = beanstore.VectorSearch(
 			embs,
 			vec_field,
-			store.WithVectorFilter(options.Filter),
+			store.WithVectorFilter(options.ScalarFilter),
 			store.WithProjection(_PROJECTION_FIELDS),
 			store.WithMinSearchScore(min_score),
 			store.WithVectorTopN(options.TopN))
@@ -145,7 +165,7 @@ func NuggetSearch(nuggets []string, settings *SearchOptions) []Bean {
 	nuggets_filter := store.JSON{
 		"keyphrase": store.JSON{"$in": nuggets},
 	}
-	if updated, ok := settings.Filter["updated"]; ok {
+	if updated, ok := settings.ScalarFilter["updated"]; ok {
 		nuggets_filter["updated"] = updated
 	}
 	initial_list := nuggetstore.Get(nuggets_filter, store.JSON{"mapped_urls": 1}, store.JSON{"match_count": -1}, settings.TopN)
@@ -158,7 +178,7 @@ func NuggetSearch(nuggets []string, settings *SearchOptions) []Bean {
 	bean_filter := store.JSON{
 		"url": store.JSON{"$in": mapped_urls},
 	}
-	if kind, ok := settings.Filter["kind"]; ok {
+	if kind, ok := settings.ScalarFilter["kind"]; ok {
 		bean_filter["kind"] = kind
 	}
 	beans := beanstore.Get(
@@ -181,7 +201,7 @@ func TrendingNuggets(options *SearchOptions) []NewsNugget {
 	nugget_filter := store.JSON{
 		"match_count": store.JSON{"$gte": 1}, // this a minimum
 	}
-	if updated, ok := options.Filter["updated"]; ok {
+	if updated, ok := options.ScalarFilter["updated"]; ok {
 		nugget_filter["updated"] = updated
 	}
 	initial_urls := make([]string, 0, 10) //default initialization
@@ -195,7 +215,7 @@ func TrendingNuggets(options *SearchOptions) []NewsNugget {
 
 	// 1. Match the all beans irrespective of updated: 0/1 within category match
 	beans_options := *options
-	beans_options.Filter = store.JSON{"url": store.JSON{"$in": initial_urls}}
+	beans_options.ScalarFilter = store.JSON{"url": store.JSON{"$in": initial_urls}}
 	beans_options.TopN = len(initial_urls) // look for all the items that match and dont shorten to only user provided topN just yet
 	matched_urls := datautils.Transform(FuzzySearch(&beans_options), func(item *Bean) string { return item.Url })
 	// there is nothing that matches the categories
@@ -209,9 +229,8 @@ func TrendingNuggets(options *SearchOptions) []NewsNugget {
 	return nuggetstore.Get(
 		nugget_filter,
 		store.JSON{
-			"embeddings":  0,
-			"mapped_urls": 0,
-			"_id":         0,
+			"embeddings": 0,
+			"_id":        0,
 		},
 		store.JSON{"match_count": -1}, // stack rank by trend score
 		options.TopN,                  // now add the topN provided by user

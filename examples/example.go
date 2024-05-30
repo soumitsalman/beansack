@@ -12,6 +12,32 @@ import (
 	datautils "github.com/soumitsalman/data-utils"
 )
 
+func Retrieval() {
+	// initialize the services
+	if err := sdk.InitializeBeanSack(os.Getenv("DB_CONNECTION_STRING"), os.Getenv("EMBEDDER_BASE_URL"), os.Getenv("LLMSERVICE_API_KEY")); err != nil {
+		log.Fatalln("initialization not working", err)
+	}
+
+	options := sdk.NewSearchOptions().WithTimeWindow(30).WithURLs([]string{
+		"https://hackaday.com/2024/05/13/sandwizz-promises-to-reinvent-the-breadboard/",
+		"https://hackaday.com/2024/05/26/2024-business-card-challenge-adding-some-refinement-to-breadboard-power-supplies/",
+		"https://www.cnx-software.com/2024/05/21/breadboardos-firmware-for-the-raspberry-pi-rp2040-features-a-linux-like-terminal/",
+		"https://www.theverge.com/24152153/animal-well-review-switch-ps5-steam-videogamedunkey",
+		"https://www.techspot.com/news/103113-snapdragon-x-windows-pcs-run-over-1000-games.html",
+	})
+	fmt.Println("### RETRIEVAL ###")
+	datautils.ForEach(sdk.Retrieve(options), func(item *sdk.Bean) {
+		fmt.Printf("[%s] Text length = %d: %s\n", item.Source, len(item.Text), item.Title)
+	})
+
+	// trending nuggets
+	nuggets := sdk.TrendingNuggets(sdk.NewSearchOptions().WithTimeWindow(2))
+	log.Println("### TRENDING NUGGETS ###")
+	datautils.ForEach(nuggets, func(item *sdk.NewsNugget) {
+		fmt.Printf("%d | %s -> %s | urls = %d\n", item.TrendScore, item.KeyPhrase, item.Event, len(item.BeanUrls))
+	})
+}
+
 func Search() {
 	// initialize the services
 	if err := sdk.InitializeBeanSack(os.Getenv("DB_CONNECTION_STRING"), os.Getenv("EMBEDDER_BASE_URL"), os.Getenv("LLMSERVICE_API_KEY")); err != nil {
@@ -48,12 +74,6 @@ func Search() {
 	datautils.ForEach(beans, func(item *sdk.Bean) {
 		log.Printf("[%s] %s | %s\n", item.Source, time.Unix(item.Updated, 0).Format(time.DateTime), item.Title)
 	})
-
-	// trending nuggets
-	nuggets := sdk.TrendingNuggets(sdk.NewSearchOptions().WithTimeWindow(2))
-	log.Println("### Trending Nuggets Result ###")
-	datautils.ForEach(nuggets, func(item *sdk.NewsNugget) { log.Printf("%d | %s: %s\n", item.TrendScore, item.KeyPhrase, item.Event) })
-
 }
 
 func Nlp() {

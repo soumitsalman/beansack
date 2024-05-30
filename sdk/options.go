@@ -12,7 +12,7 @@ const (
 )
 
 type SearchOptions struct {
-	Filter           store.JSON
+	ScalarFilter     store.JSON
 	TopN             int
 	SearchTexts      []string
 	SearchEmbeddings [][]float32
@@ -21,18 +21,18 @@ type SearchOptions struct {
 
 func NewSearchOptions() *SearchOptions {
 	return &SearchOptions{
-		Filter: make(store.JSON),
-		TopN:   _DEFAULT_TOPN,
+		ScalarFilter: make(store.JSON),
+		TopN:         _DEFAULT_TOPN,
 	}
 }
 
 func (settings *SearchOptions) WithTimeWindow(time_window int) *SearchOptions {
-	settings.Filter["updated"] = store.JSON{"$gte": timeValue(time_window)}
+	settings.ScalarFilter["updated"] = store.JSON{"$gte": timeValue(time_window)}
 	return settings
 }
 
 func (settings *SearchOptions) WithKind(kinds []string) *SearchOptions {
-	settings.Filter["kind"] = store.JSON{"$in": kinds}
+	settings.ScalarFilter["kind"] = store.JSON{"$in": kinds}
 	return settings
 }
 
@@ -43,6 +43,13 @@ func (settings *SearchOptions) WithTopN(topn int) *SearchOptions {
 		settings.TopN = _MAX_TOPN
 	} else {
 		settings.TopN = topn
+	}
+	return settings
+}
+
+func (settings *SearchOptions) WithURLs(urls []string) *SearchOptions {
+	if len(urls) > 0 {
+		settings.ScalarFilter["url"] = store.JSON{"$in": urls}
 	}
 	return settings
 }
